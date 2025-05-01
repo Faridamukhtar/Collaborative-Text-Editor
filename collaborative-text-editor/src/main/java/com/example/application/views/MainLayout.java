@@ -28,7 +28,7 @@ public class MainLayout extends AppLayout {
 
     public MainLayout() {
         setPrimarySection(Section.DRAWER);
-        addDrawerContent();
+        //addDrawerContent();
         addHeaderContent();
     }
 
