@@ -39,6 +39,10 @@ public class StartView extends VerticalLayout {
         Image newDocIcon = new Image("icons/new-file.png", "New Doc");
         newDocIcon.setWidth("60px");
         Button newDocBtn = new Button("New Doc.");
+        newDocBtn.addClickListener(event -> {        
+            VaadinSession.getCurrent().setAttribute("importedText", "");
+            getUI().ifPresent(ui -> ui.navigate("page-editor"));    
+        });
         newDocLayout.add(newDocIcon, newDocBtn);
 
         // === Import Document Section ===
