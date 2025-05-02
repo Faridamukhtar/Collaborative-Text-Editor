@@ -78,7 +78,7 @@ public class WebSocketCollaborationService implements CollaborationService {
     }
 
     @Override
-    public CompletableFuture<String> requestInitialState() {
+    public CompletableFuture<String> getInitialContent() {
         if (isConnected.get()) {
             return initialStateFuture;
         } else {
@@ -123,7 +123,7 @@ public class WebSocketCollaborationService implements CollaborationService {
     }
     
     @Override
-    public Registration subscribeToChanges(Consumer<TextOperation> listener) {
+    public Registration subscribeToOperations(Consumer<TextOperation> listener) {
         operationListeners.add(listener);
         return () -> operationListeners.remove(listener);
     }

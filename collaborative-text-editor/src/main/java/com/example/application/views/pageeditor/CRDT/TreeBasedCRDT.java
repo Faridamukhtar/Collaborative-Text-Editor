@@ -5,17 +5,25 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 public class TreeBasedCRDT {
     private static final Logger logger = LoggerFactory.getLogger(TreeBasedCRDT.class);
     
-    private final Map<String, TreeNode> nodes = new ConcurrentHashMap<>();
-    private final Map<String, List<TreeNode>> children = new ConcurrentHashMap<>();
+    // Use concurrent collections for lock-free access
+    private final ConcurrentHashMap<String, TreeNode> nodes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ConcurrentSkipListSet<TreeNode>> children = new ConcurrentHashMap<>();
     private final String siteId;
     private final AtomicLong logicalTime = new AtomicLong(0);
     private final OperationBuffer buffer = new OperationBuffer();
+    
+    // Comparator for sorting TreeNodes
+    private static final Comparator<TreeNode> NODE_COMPARATOR = 
+        Comparator.comparingLong(TreeNode::getTimestamp)
+                  .thenComparing(TreeNode::getSiteId);
 
     public TreeBasedCRDT() {
         this.siteId = UUID.randomUUID().toString();
@@ -25,13 +33,17 @@ public class TreeBasedCRDT {
         this.siteId = siteId;
     }
 
-    // Initialize with starting content
+    // Initialize with starting content - lock-free approach
     public void initialize(String initialContent) {
         if (initialContent == null || initialContent.isEmpty()) {
             return;
         }
         
         logger.info("Initializing with content of length: {}", initialContent.length());
+        
+        // Clear any existing data - no locks needed with ConcurrentHashMap
+        nodes.clear();
+        children.clear();
         
         TreeNode prev = null;
         for (int i = 0; i < initialContent.length(); i++) {
@@ -42,21 +54,23 @@ public class TreeBasedCRDT {
             node.setValue(c);
             
             nodes.put(id, node);
-            if (parentId != null) {
-                children.computeIfAbsent(parentId, k -> new ArrayList<>()).add(node);
-            } else {
-                children.computeIfAbsent("root", k -> new ArrayList<>()).add(node);
-            }
+            
+            // Use computeIfAbsent for thread-safe initialization
+            String finalParentId = parentId != null ? parentId : "root";
+            children.computeIfAbsent(finalParentId, k -> new ConcurrentSkipListSet<>(NODE_COMPARATOR))
+                   .add(node);
+            
             prev = node;
         }
         
         logger.info("Initialization complete. Node count: {}", nodes.size());
     }
 
-    // Insert a character at position
+    // Insert a character at position - lock-free approach
     public TextOperation applyLocalInsert(char value, int position) {
         logger.debug("Local insert: char '{}' at position {}", value, position);
         
+        // Find the node at the specified position without locks
         TreeNode parent = findNodeAt(position - 1);
         String parentId = parent != null ? parent.getId() : "root";
         String id = UUID.randomUUID().toString();
@@ -66,12 +80,14 @@ public class TreeBasedCRDT {
         node.setValue(value);
         nodes.put(id, node);
         
-        List<TreeNode> siblingNodes = children.computeIfAbsent(parentId, k -> new ArrayList<>());
-        siblingNodes.add(node);
+        // Add to children collection using computeIfAbsent for thread safety
+        children.computeIfAbsent(parentId, k -> new ConcurrentSkipListSet<>(NODE_COMPARATOR))
+               .add(node);
         
         // Find the next node for context (afterPos)
         String afterPos = null;
-        if (position < getVisibleNodeCount()) {
+        int currentNodeCount = getVisibleNodeCount();
+        if (position < currentNodeCount) {
             TreeNode nextNode = findNodeAt(position);
             if (nextNode != null) {
                 afterPos = nextNode.getId();
@@ -92,12 +108,13 @@ public class TreeBasedCRDT {
         return op;
     }
 
-    // Delete a character at position
+    // Delete a character at position - lock-free approach
     public TextOperation applyLocalDelete(int position) {
         logger.debug("Local delete at position {}", position);
         
         TreeNode node = findNodeAt(position);
         if (node != null) {
+            // Mark as deleted - node state changes are atomic
             node.markDeleted();
             
             TextOperation op = TextOperation.createDelete(
@@ -115,7 +132,7 @@ public class TreeBasedCRDT {
         return null;
     }
 
-    // Apply remote operation
+    // Apply remote operation - lock-free approach
     public void applyRemote(TextOperation operation) {
         logger.debug("Applying remote operation: {}", operation);
         
@@ -145,6 +162,10 @@ public class TreeBasedCRDT {
             return;
         }
         
+        // Update logical time to be at least as large as the operation's timestamp
+        long opTimestamp = operation.getTimestamp();
+        updateLogicalClock(opTimestamp);
+        
         TreeNode node = new TreeNode(
             operation.getPositionId(),
             parentId,
@@ -154,29 +175,43 @@ public class TreeBasedCRDT {
         node.setValue(operation.getCharacter());
         nodes.put(node.getId(), node);
         
-        // Add to children list
-        children.computeIfAbsent(parentId, k -> new ArrayList<>()).add(node);
-        
-        // Use afterPos for ordering hints if provided
-        if (operation.getAfterPos() != null && children.containsKey(parentId)) {
-            List<TreeNode> siblings = children.get(parentId);
-            siblings.sort(Comparator.naturalOrder());
-        }
+        // Add to children collection
+        children.computeIfAbsent(parentId, k -> new ConcurrentSkipListSet<>(NODE_COMPARATOR))
+               .add(node);
         
         logger.debug("Remote insert applied: {}", operation.getPositionId());
     }
     
     private void handleRemoteDelete(TextOperation operation) {
         String nodeId = operation.getPositionId();
-        if (nodes.containsKey(nodeId)) {
-            nodes.get(nodeId).markDeleted();
+        TreeNode node = nodes.get(nodeId);
+        if (node != null) {
+            node.markDeleted();
             logger.debug("Remote delete applied: {}", nodeId);
         } else {
             logger.warn("Cannot delete node {}: not found", nodeId);
         }
     }
 
-    // Get current content
+    // Helper method to update the logical clock in a lock-free manner
+    private void updateLogicalClock(long remoteTimestamp) {
+        while (true) {
+            long currentTime = logicalTime.get();
+            if (remoteTimestamp <= currentTime) {
+                // Current time is already greater than or equal to remote timestamp
+                break;
+            }
+            
+            if (logicalTime.compareAndSet(currentTime, remoteTimestamp)) {
+                // Successfully updated
+                break;
+            }
+            
+            // Another thread updated the clock, retry
+        }
+    }
+
+    // Get current content - lock-free
     public String getContent() {
         StringBuilder sb = new StringBuilder();
         List<TreeNode> flatNodes = getVisibleNodes();
@@ -188,19 +223,19 @@ public class TreeBasedCRDT {
         return sb.toString();
     }
     
-    // Get all visible nodes in correct order
+    // Get all visible nodes in correct order - lock-free approach
     public List<TreeNode> getVisibleNodes() {
+        // Create a new list to avoid concurrent modification
         List<TreeNode> result = new ArrayList<>();
         traverseTree("root", result);
         return result;
     }
 
     private void traverseTree(String parentId, List<TreeNode> result) {
-        List<TreeNode> childNodes = children.getOrDefault(parentId, new ArrayList<>());
-        // Sort nodes by timestamp and siteId for consistent ordering
-        childNodes.sort(Comparator.comparingLong(TreeNode::getTimestamp)
-                .thenComparing(TreeNode::getSiteId));
+        // Get a snapshot of the children collection
+        ConcurrentSkipListSet<TreeNode> childNodes = children.getOrDefault(parentId, new ConcurrentSkipListSet<>(NODE_COMPARATOR));
         
+        // ConcurrentSkipListSet maintains sorted order based on comparator
         for (TreeNode node : childNodes) {
             if (!node.isDeleted()) {
                 result.add(node);
@@ -216,7 +251,7 @@ public class TreeBasedCRDT {
     }
     
     private int getVisibleNodeCount() {
-        return (int) getVisibleNodes().stream().filter(n -> !n.isDeleted()).count();
+        return getVisibleNodes().size();
     }
 
     public void acknowledge(String operationId) {

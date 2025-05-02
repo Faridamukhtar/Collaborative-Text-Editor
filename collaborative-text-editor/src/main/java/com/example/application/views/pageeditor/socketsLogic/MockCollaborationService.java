@@ -54,6 +54,7 @@ public class MockCollaborationService implements CollaborationService {
             @Override
             public void run() {
                 operationListeners.forEach(listener -> listener.accept(operation));
+                System.out.println("Echoed operation: " + operation);
             }
         }, 200); // 200ms delay
     }
@@ -65,12 +66,12 @@ public class MockCollaborationService implements CollaborationService {
     }
 
     @Override
-    public CompletableFuture<String> requestInitialState() {
+    public CompletableFuture<String> getInitialContent() {
         return CompletableFuture.completedFuture(initialContent);
     }
 
     @Override
-    public Registration subscribeToChanges(Consumer<TextOperation> listener) {
+    public Registration subscribeToOperations(Consumer<TextOperation> listener) {
         operationListeners.add(listener);
         return () -> operationListeners.remove(listener);
     }

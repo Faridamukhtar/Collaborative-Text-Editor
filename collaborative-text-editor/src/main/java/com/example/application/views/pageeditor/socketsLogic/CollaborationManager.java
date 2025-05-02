@@ -1,4 +1,3 @@
-
 package com.example.application.views.pageeditor;
 
 import com.example.application.views.pageeditor.CRDT.*;
@@ -11,26 +10,29 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Manages the collaboration between the CRDT data structure and the network service.
- * This class coordinates:
- * - Local text updates
- * - Remote operation handling
- * - Selection state synchronization
+ * Lock-free implementation of the collaboration manager.
+ * Coordinates the TreeBasedCRDT with the network service
+ * without using traditional locks.
  */
 public class CollaborationManager {
     private static final Logger logger = LoggerFactory.getLogger(CollaborationManager.class);
     
     private final TreeBasedCRDT crdt;
     private final CollaborationService collaborationService;
-    private String localContent = "";
-    private SelectionState selectionState = new SelectionState(0, 0);
-    private Consumer<String> onContentChangeListener;
+    
+    // Use AtomicReference for thread-safe access without locks
+    private final AtomicReference<String> localContent = new AtomicReference<>("");
+    private final AtomicReference<SelectionState> selectionState = new AtomicReference<>(new SelectionState(0, 0));
+    private final AtomicReference<Consumer<String>> onContentChangeListener = new AtomicReference<>();
+    
+    private Registration operationRegistration;
     private Registration connectionRegistration;
     
     /**
-     * Create a new collaboration manager
+     * Create a new lock-free collaboration manager
      * 
      * @param collaborationService The service for network communication
      */
@@ -46,11 +48,16 @@ public class CollaborationManager {
      * @return A future that completes when initialization is done
      */
     public CompletableFuture<Void> initialize() {
-        return collaborationService.requestInitialState()
+        return collaborationService.getInitialContent()
             .thenAccept(initialContent -> {
-                logger.info("Initializing with content length: {}", initialContent.length());
+                logger.info("Initializing with content length: {}", 
+                    initialContent != null ? initialContent.length() : 0);
+                
+                // Initialize CRDT with content
                 crdt.initialize(initialContent);
-                localContent = initialContent;
+                // Update local content reference atomically
+                localContent.set(initialContent != null ? initialContent : "");
+                
                 notifyContentChanged();
             });
     }
@@ -61,31 +68,40 @@ public class CollaborationManager {
      * @param newContent The new text content
      */
     public void updateContent(String newContent) {
-        if (newContent.equals(localContent)) {
+        if (newContent == null) {
+            newContent = "";
+        }
+        
+        // Get current content without locks
+        String currentContent = localContent.get();
+        
+        if (newContent.equals(currentContent)) {
             return;
         }
         
-        logger.debug("Content changed from {} to {} chars", localContent.length(), newContent.length());
+        logger.debug("Content changed from {} to {} chars", currentContent.length(), newContent.length());
         
-        // Calculate the operations needed to transform localContent to newContent
-        List<TextOperation> operations = DeltaCalculator.calculateOperations(localContent, newContent, crdt);
+        // Calculate operations needed to transform content
+        List<TextOperation> operations = DeltaCalculator.calculateOperations(
+                currentContent, newContent, crdt);
+        
+        // Atomically update local content
+        localContent.set(newContent);
         
         // Send operations to the collaboration service
         for (TextOperation op : operations) {
             collaborationService.sendOperation(op);
         }
-        
-        // Update local content
-        localContent = newContent;
     }
     
     /**
      * Update the selection state
      * 
-     * @param selectionState The new selection state
+     * @param newSelectionState The new selection state
      */
-    public void updateSelection(SelectionState selectionState) {
-        this.selectionState = selectionState;
+    public void updateSelection(SelectionState newSelectionState) {
+        // Atomically update selection state
+        selectionState.set(newSelectionState);
         // Here you could also broadcast selection to other users
     }
     
@@ -96,8 +112,8 @@ public class CollaborationManager {
      * @return A registration that can be used to remove the listener
      */
     public Registration setContentChangeListener(Consumer<String> listener) {
-        this.onContentChangeListener = listener;
-        return () -> this.onContentChangeListener = null;
+        onContentChangeListener.set(listener);
+        return () -> onContentChangeListener.set(null);
     }
     
     /**
@@ -114,6 +130,9 @@ public class CollaborationManager {
         if (connectionRegistration != null) {
             connectionRegistration.remove();
         }
+        if (operationRegistration != null) {
+            operationRegistration.remove();
+        }
         collaborationService.disconnect();
     }
     
@@ -121,7 +140,7 @@ public class CollaborationManager {
      * Get the current selection state
      */
     public SelectionState getSelectionState() {
-        return selectionState;
+        return selectionState.get();
     }
     
     /**
@@ -137,7 +156,7 @@ public class CollaborationManager {
      * Set up handlers for network events
      */
     private void setupNetworkHandlers() {
-        collaborationService.subscribeToChanges(this::handleRemoteOperation);
+        operationRegistration = collaborationService.subscribeToOperations(this::handleRemoteOperation);
         connectionRegistration = collaborationService.subscribeToConnectionChanges(this::handleConnectionChange);
     }
     
@@ -151,7 +170,7 @@ public class CollaborationManager {
     }
     
     /**
-     * Handle a remote operation
+     * Handle a remote operation without locks
      * 
      * @param operation The operation to handle
      */
@@ -161,11 +180,26 @@ public class CollaborationManager {
         // Apply the operation to the CRDT
         crdt.applyRemote(operation);
         
-        // Update local content
+        // Get updated content from the CRDT
         String newContent = crdt.getContent();
-        if (!newContent.equals(localContent)) {
-            localContent = newContent;
-            notifyContentChanged();
+        
+        // Use compareAndSet to ensure atomic updates
+        // This loop will retry if another thread updates localContent concurrently
+        String currentContent;
+        boolean contentChanged = false;
+        do {
+            currentContent = localContent.get();
+            if (newContent.equals(currentContent)) {
+                // No change needed
+                break;
+            }
+            contentChanged = localContent.compareAndSet(currentContent, newContent);
+        } while (!contentChanged);
+        
+        // Only notify if content actually changed
+        if (contentChanged) {
+            // Notify on a separate thread to avoid blocking
+            CompletableFuture.runAsync(this::notifyContentChanged);
         }
         
         // Acknowledge the operation
@@ -176,8 +210,13 @@ public class CollaborationManager {
      * Notify the content change listener
      */
     private void notifyContentChanged() {
-        if (onContentChangeListener != null) {
-            onContentChangeListener.accept(localContent);
+        // Get current content reference without locks
+        String currentContent = localContent.get();
+        
+        // Get current listener reference without locks
+        Consumer<String> listener = onContentChangeListener.get();
+        if (listener != null) {
+            listener.accept(currentContent);
         }
     }
 }

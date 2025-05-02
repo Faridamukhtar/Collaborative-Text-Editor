@@ -1,26 +1,16 @@
 package com.example.application.views.pageeditor.socketsLogic;
-import com.example.application.views.pageeditor.CRDT.*;
 
+import com.example.application.views.pageeditor.CRDT.TextOperation;
 import com.vaadin.flow.shared.Registration;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 /**
- * Interface for collaboration services that handle communication
- * between clients for collaborative editing.
+ * Interface for collaboration services that handle network communication
+ * for collaborative editing.
  */
 public interface CollaborationService {
-    /**
-     * Request the initial document state from the server
-     * @return A future that resolves to the document content
-     */
-    CompletableFuture<String> requestInitialState();
-    
-    /**
-     * Check if the service is connected
-     * @return true if connected, false otherwise
-     */
-    boolean isConnected();
     
     /**
      * Connect to the collaboration service
@@ -33,21 +23,38 @@ public interface CollaborationService {
     void disconnect();
     
     /**
-     * Send an operation to other clients
+     * Check if the service is connected
+     * 
+     * @return True if connected, false otherwise
+     */
+    boolean isConnected();
+    
+    /**
+     * Get the initial content of the document
+     * 
+     * @return A future with the initial content
+     */
+    CompletableFuture<String> getInitialContent();
+    
+    /**
+     * Send a text operation to other collaborators
+     * 
      * @param operation The operation to send
      */
     void sendOperation(TextOperation operation);
     
     /**
-     * Subscribe to changes from other clients
-     * @param listener The callback to invoke when an operation is received
+     * Subscribe to incoming text operations
+     * 
+     * @param listener The listener to call when operations are received
      * @return A registration that can be used to unsubscribe
      */
-    Registration subscribeToChanges(Consumer<TextOperation> listener);
+    Registration subscribeToOperations(Consumer<TextOperation> listener);
     
     /**
-     * Subscribe to connection state changes
-     * @param listener The callback to invoke when connection state changes
+     * Subscribe to changes in connection state
+     * 
+     * @param listener The listener to call when connection state changes
      * @return A registration that can be used to unsubscribe
      */
     Registration subscribeToConnectionChanges(Runnable listener);
