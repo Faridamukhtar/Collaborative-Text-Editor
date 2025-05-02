@@ -3,266 +3,222 @@ package com.example.application.views.pageeditor;
 import com.example.application.views.pageeditor.CRDT.*;
 import com.example.application.views.pageeditor.socketsLogic.*;
 
-import com.vaadin.flow.component.*;
-import com.vaadin.flow.component.html.*;
-import com.vaadin.flow.component.richtexteditor.*;
-import com.vaadin.flow.router.*;
+import com.vaadin.flow.component.AttachEvent;
+import com.vaadin.flow.component.DetachEvent;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.component.notification.Notification;
+import com.vaadin.flow.component.orderedlayout.VerticalLayout;
+import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.shared.Registration;
-import com.vaadin.flow.theme.lumo.LumoUtility.*;
-import org.vaadin.lineawesome.LineAwesomeIconUrl;
 
-import java.util.*;
-import java.util.Timer;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import java.util.stream.Stream;
-import java.util.TimerTask;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-@PageTitle("Collaborative Editor")
-@Route("collab-editor")
-public class CollaborativeEditor extends Div {
-    private final RichTextEditor editor;
-    private final ClientRGA documentModel;
+/**
+ * A collaborative text editor component that uses CRDT for conflict-free editing
+ */
+public class CollaborativeEditor extends VerticalLayout {
+    private static final Logger logger = LoggerFactory.getLogger(CollaborativeEditor.class);
+    
+    private final TextArea editor = new TextArea();
+    private final Button connectButton = new Button("Connect");
+    private final Button disconnectButton = new Button("Disconnect");
+    private final Div statusIndicator = new Div();
+    
     private final CollaborationService collaborationService;
-    private String lastContent = "";
-    private SelectionState currentSelection = new SelectionState(0, 0);
-    private Registration editorListener;
-    private Timer debounceTimer;
-
+    private final CollaborationManager collaborationManager;
+    private Registration editorValueChangeRegistration;
+    private Registration contentChangeRegistration;
+    private Registration connectionChangeRegistration;
+    
+    /**
+     * Create a new collaborative editor with a specific service
+     * 
+     * @param collaborationService The collaboration service to use
+     */
     public CollaborativeEditor(CollaborationService collaborationService) {
         this.collaborationService = collaborationService;
-        this.documentModel = new ClientRGA();
+        this.collaborationManager = new CollaborationManager(collaborationService);
         
-        // Setup UI
-        addClassNames(Display.FLEX, Flex.GROW, Height.FULL);
-        editor = new RichTextEditor();
-        editor.addClassNames(Flex.GROW, Height.FULL);
-        add(editor);
+        setupUI();
+        setupEventHandlers();
         
-        // Initialize collaboration
-        initializeCollaboration();
+        // Initialize with content from the server
+        collaborationManager.initialize()
+            .thenRun(() -> {
+                updateEditorContent(collaborationManager.getContentFromCRDT());
+                Notification.show("Document loaded successfully");
+            })
+            .exceptionally(e -> {
+                Notification.show("Failed to load document: " + e.getMessage());
+                logger.error("Initialization failed", e);
+                return null;
+            });
     }
-
-    private void initializeCollaboration() {
-        // 1. Setup editor listeners
-        setupEditorListeners();
-        
-        // 2. Connect to collaboration service
-        collaborationService.connect();
-        
-        // 3. Load initial document state
-        collaborationService.requestInitialState().thenAccept(this::initializeDocument);
-        
-        // 4. Subscribe to remote changes
-        collaborationService.subscribeToChanges(this::handleRemoteOperation);
+    
+    /**
+     * Create a new collaborative editor
+     * 
+     * @param documentId ID of the document to edit
+     * @param userId ID of the current user
+     */
+    public CollaborativeEditor(String documentId, String userId) {
+        this(createCollaborationService(documentId, userId));
     }
-
-    private void setupEditorListeners() {
-        // Track selection changes
-        editor.getElement().addEventListener("cursor-changed", e -> {
-            currentSelection = new SelectionState(
-                ((Double) e.getEventData().getNumber("editor.__selection.range.startOffset")).intValue(),
-                ((Double) e.getEventData().getNumber("editor.__selection.range.endOffset")).intValue()
+    
+    /**
+     * Create a collaboration service
+     * 
+     * @param documentId ID of the document to edit
+     * @param userId ID of the current user
+     * @return A collaboration service
+     */
+    private static CollaborationService createCollaborationService(String documentId, String userId) {
+        // For production, use WebSocketCollaborationService
+        // For testing, use MockCollaborationService
+        
+        // Example for WebSocket
+        String serverUrl = "wss://your-collaboration-server.com";
+        return new WebSocketCollaborationService(serverUrl, documentId, userId);
+        
+        // Example for Mock
+        // return new MockCollaborationService("Initial content for testing");
+    }
+    
+    /**
+     * Set up the UI components
+     */
+    private void setupUI() {
+        editor.setWidthFull();
+        editor.setHeight("400px");
+        editor.setPlaceholder("Start typing to collaborate...");
+        
+        statusIndicator.setText("Disconnected");
+        statusIndicator.getStyle().set("color", "red");
+        
+        disconnectButton.setEnabled(false);
+        
+        Div controlsDiv = new Div(connectButton, disconnectButton, statusIndicator);
+        controlsDiv.getStyle().set("display", "flex");
+        controlsDiv.getStyle().set("gap", "10px");
+        controlsDiv.getStyle().set("align-items", "center");
+        
+        add(editor, controlsDiv);
+    }
+    
+    /**
+     * Set up event handlers
+     */
+    private void setupEventHandlers() {
+        // Editor value change
+        editorValueChangeRegistration = editor.addValueChangeListener(event -> {
+            // Get selection before updating
+            int start = editor.getElement().getProperty("selectionStart", 0);
+            int end = editor.getElement().getProperty("selectionEnd", 0);
+            
+            // Update content and selection
+            collaborationManager.updateContent(event.getValue());
+            collaborationManager.updateSelection(new SelectionState(start, end));
+        });
+        
+        // Connect button
+        connectButton.addClickListener(event -> {
+            collaborationManager.connect();
+        });
+        
+        // Disconnect button
+        disconnectButton.addClickListener(event -> {
+            collaborationManager.disconnect();
+        });
+        
+        // Subscribe to content changes from the collaboration manager
+        contentChangeRegistration = collaborationManager.setContentChangeListener(this::updateEditorContent);
+        
+        // Subscribe to connection state changes
+        connectionChangeRegistration = collaborationService.subscribeToConnectionChanges(() -> {
+            updateConnectionStatus(collaborationService.isConnected());
+        });
+    }
+    
+    /**
+     * Component attached to the UI
+     */
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        updateConnectionStatus(collaborationService.isConnected());
+    }
+    
+    /**
+     * Update the editor content
+     * 
+     * @param content New content
+     */
+    private void updateEditorContent(String content) {
+        // Temporarily remove value change listener to avoid triggering it
+        if (editorValueChangeRegistration != null) {
+            editorValueChangeRegistration.remove();
+        }
+        
+        // Update content
+        editor.setValue(content);
+        
+        // Restore value change listener
+        editorValueChangeRegistration = editor.addValueChangeListener(event -> {
+            int start = editor.getElement().getProperty("selectionStart", 0);
+            int end = editor.getElement().getProperty("selectionEnd", 0);
+            
+            collaborationManager.updateContent(event.getValue());
+            collaborationManager.updateSelection(new SelectionState(start, end));
+        });
+        
+        // Restore selection if available
+        SelectionState selectionState = collaborationManager.getSelectionState();
+        if (selectionState != null) {
+            editor.getElement().executeJs(
+                "this.setSelectionRange($0, $1)",
+                selectionState.getStart(),
+                selectionState.getEnd()
             );
-        }).addEventData("editor.__selection.range.startOffset")
-          .addEventData("editor.__selection.range.endOffset");
-
-        // Listen for content changes with debouncing
-        editorListener = editor.addValueChangeListener(e -> {
-            if (e.isFromClient()) {
-                debounceContentChange(e.getValue());
-            }
-        });
-    }
-
-    private void debounceContentChange(String newContent) {
-        if (debounceTimer != null) {
-            debounceTimer.cancel();
         }
-        
-        debounceTimer = new Timer();
-        debounceTimer.schedule(new TimerTask() {
-            @Override
-            public void run() {
-                getUI().ifPresent(ui -> ui.access(() -> {
-                    handleLocalChange(newContent);
-                }));
-            }
-        }, 300); // 300ms debounce
     }
-
-    private void initializeDocument(String initialContent) {
-        getUI().ifPresent(ui -> ui.access(() -> {
-            // Initialize with empty content first
-            documentModel.initialize("", documentModel.getClientId());
-            
-            // Apply each character as an insert operation
-            for (int i = 0; i < initialContent.length(); i++) {
-                TextOperation op = TextOperation.createInsert(
-                    initialContent.charAt(i),
-                    String.valueOf(i),
-                    System.currentTimeMillis(),
-                    documentModel.getClientId(),
-                    i > 0 ? String.valueOf(i-1) : null,
-                    i < initialContent.length()-1 ? String.valueOf(i+1) : null
-                );
-                documentModel.applyLocal(op);
-            }
-            
-            editor.setValue(initialContent);
-            lastContent = initialContent;
-        }));
-    }
-
-    private void handleLocalChange(String newContent) {
-        List<TextOperation> operations = calculateOperations(lastContent, newContent);
-        
-        operations.forEach(op -> {
-            documentModel.applyLocal(op);
-            collaborationService.sendOperation(op);
-        });
-        
-        lastContent = newContent;
-    }
-
-    private List<TextOperation> calculateOperations(String oldText, String newText) {
-        List<TextOperation> operations = new ArrayList<>();
-        
-        // Handle content reset
-        if (oldText.isEmpty() && !newText.isEmpty()) {
-            for (int i = 0; i < newText.length(); i++) {
-                operations.add(createInsertOperation(newText.charAt(i), i));
-            }
-            return operations;
+    
+    /**
+     * Update the connection status indicator
+     * 
+     * @param connected True if connected, false otherwise
+     */
+    private void updateConnectionStatus(boolean connected) {
+        if (connected) {
+            statusIndicator.setText("Connected");
+            statusIndicator.getStyle().set("color", "green");
+            connectButton.setEnabled(false);
+            disconnectButton.setEnabled(true);
+        } else {
+            statusIndicator.setText("Disconnected");
+            statusIndicator.getStyle().set("color", "red");
+            connectButton.setEnabled(true);
+            disconnectButton.setEnabled(false);
         }
-
-        // Find difference
-        int commonPrefix = 0;
-        int minLength = Math.min(oldText.length(), newText.length());
-        
-        while (commonPrefix < minLength && 
-               oldText.charAt(commonPrefix) == newText.charAt(commonPrefix)) {
-            commonPrefix++;
-        }
-        
-        int commonSuffix = 0;
-        while (commonSuffix < minLength - commonPrefix &&
-               oldText.charAt(oldText.length() - 1 - commonSuffix) == 
-               newText.charAt(newText.length() - 1 - commonSuffix)) {
-            commonSuffix++;
-        }
-        
-        // Handle deletions (right to left)
-        for (int i = oldText.length() - commonSuffix - 1; i >= commonPrefix; i--) {
-            operations.add(createDeleteOperation(i));
-        }
-        
-        // Handle insertions
-        String inserted = newText.substring(commonPrefix, newText.length() - commonSuffix);
-        for (int i = 0; i < inserted.length(); i++) {
-            operations.add(createInsertOperation(
-                inserted.charAt(i), 
-                commonPrefix + i
-            ));
-        }
-        
-        return operations;
     }
-
-    private TextOperation createInsertOperation(char c, int pos) {
-        return TextOperation.createInsert(
-            c,
-            String.valueOf(pos),
-            System.currentTimeMillis(),
-            documentModel.getClientId(),
-            pos > 0 ? String.valueOf(pos-1) : null,
-            null
-        );
-    }
-
-    private TextOperation createDeleteOperation(int pos) {
-        return TextOperation.createDelete(
-            String.valueOf(pos),
-            System.currentTimeMillis(),
-            documentModel.getClientId()
-        );
-    }
-
-    private void handleRemoteOperation(TextOperation operation) {
-        getUI().ifPresent(ui -> ui.access(() -> {
-            // Save current selection
-            SelectionState selectionBefore = currentSelection;
-            
-            // Apply remote operation
-            documentModel.applyRemote(operation);
-            
-            // Get current content from model
-            String currentContent = documentModel.getContent();
-            String editorContent = editor.getValue().replaceAll("\\<[^>]*>", "");
-            
-            // Only update if different
-            if (!currentContent.equals(editorContent)) {
-                editor.setValue(currentContent);
-                
-                // Transform and restore selection
-                SelectionState transformed = transformSelection(selectionBefore, operation);
-                setSelection(transformed);
-            }
-            
-            lastContent = currentContent;
-        }));
-    }
-
-    private SelectionState transformSelection(SelectionState selection, TextOperation op) {
-        try {
-            int opPosition = Integer.parseInt(op.getPositionId());
-            
-            switch (op.getType()) {
-                case INSERT:
-                    if (opPosition <= selection.getStart()) {
-                        return new SelectionState(
-                            selection.getStart() + 1,
-                            selection.getEnd() + 1
-                        );
-                    }
-                    break;
-                    
-                case DELETE:
-                    if (opPosition < selection.getStart()) {
-                        return new SelectionState(
-                            selection.getStart() - 1,
-                            selection.getEnd() - 1
-                        );
-                    } else if (opPosition == selection.getStart() && 
-                               selection.getStart() == selection.getEnd()) {
-                        return new SelectionState(
-                            Math.max(0, selection.getStart() - 1),
-                            Math.max(0, selection.getEnd() - 1)
-                        );
-                    }
-                    break;
-            }
-        } catch (NumberFormatException e) {
-            // Position ID wasn't a simple integer
-        }
-        return selection;
-    }
-
-    private void setSelection(SelectionState selection) {
-        getElement().executeJs(
-            "this.$server.setEditorSelection($0, $1)", 
-            selection.getStart(),
-            selection.getEnd()
-        );
-    }
-
+    
+    /**
+     * Clean up resources when component is detached
+     */
     @Override
     protected void onDetach(DetachEvent detachEvent) {
-        if (editorListener != null) editorListener.remove();
-        if (debounceTimer != null) debounceTimer.cancel();
-        collaborationService.disconnect();
         super.onDetach(detachEvent);
+        
+        if (editorValueChangeRegistration != null) {
+            editorValueChangeRegistration.remove();
+        }
+        if (contentChangeRegistration != null) {
+            contentChangeRegistration.remove();
+        }
+        if (connectionChangeRegistration != null) {
+            connectionChangeRegistration.remove();
+        }
+        collaborationManager.disconnect();
     }
 }

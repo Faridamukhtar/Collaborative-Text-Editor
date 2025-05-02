@@ -12,8 +12,8 @@ public class TestView extends VerticalLayout {
         setSizeFull();
         
         // Create two editor instances sharing the same mock service
-        MockCollaborationService service1 = new MockCollaborationService("Start typing here...");
-        MockCollaborationService service2 = new MockCollaborationService("Start typing here...");
+        MockCollaborationService service1 = new MockCollaborationService("");
+        MockCollaborationService service2 = new MockCollaborationService("");
         
         // First editor instance
         CollaborativeEditor editor1 = new CollaborativeEditor(service1);

@@ -1,6 +1,6 @@
+
 package com.example.application.views.pageeditor.socketsLogic;
 import com.example.application.views.pageeditor.CRDT.*;
-
 
 import com.vaadin.flow.shared.Registration;
 import org.slf4j.Logger;
@@ -11,12 +11,14 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
+/**
+ * WebSocket implementation of CollaborationService
+ */
 public class WebSocketCollaborationService implements CollaborationService {
     private static final Logger logger = LoggerFactory.getLogger(WebSocketCollaborationService.class);
     private static final int RECONNECT_DELAY_MS = 5000;
@@ -34,6 +36,12 @@ public class WebSocketCollaborationService implements CollaborationService {
     private final AtomicBoolean isConnected = new AtomicBoolean(false);
     private int retryCount = 0;
 
+    /**
+     * Create a new WebSocket collaboration service
+     * @param serverUrl The URL of the WebSocket server
+     * @param documentId The ID of the document
+     * @param userId The ID of the user
+     */
     public WebSocketCollaborationService(String serverUrl, String documentId, String userId) {
         this.serverUrl = serverUrl;
         this.documentId = documentId;
@@ -41,6 +49,7 @@ public class WebSocketCollaborationService implements CollaborationService {
         this.client = new StandardWebSocketClient();
     }
 
+    @Override
     public synchronized void connect() {
         if (isConnected.get()) return;
 
@@ -54,6 +63,7 @@ public class WebSocketCollaborationService implements CollaborationService {
         }
     }
 
+    @Override
     public synchronized void disconnect() {
         if (session != null) {
             try {
@@ -64,6 +74,7 @@ public class WebSocketCollaborationService implements CollaborationService {
         }
         executor.shutdown();
         isConnected.set(false);
+        notifyConnectionChanged();
     }
 
     @Override
@@ -83,15 +94,15 @@ public class WebSocketCollaborationService implements CollaborationService {
         }
     }
 
-    public void sendOperation(TextOperation operation)
-    {
+    @Override
+    public void sendOperation(TextOperation operation) {
         if (session == null || !session.isOpen()) {
             logger.warn("Cannot send operation - no active connection");
             return;
         }
 
         try {
-            String message = OperationSerializer.serialize(operation);
+            String message = "OP:" + OperationSerializer.serialize(operation);
             session.sendMessage(new TextMessage(message));
             logger.debug("Sent operation: {}", operation);
         } catch (IOException e) {
@@ -100,8 +111,21 @@ public class WebSocketCollaborationService implements CollaborationService {
         }
     }
 
+    @Override
     public boolean isConnected() {
         return isConnected.get();
+    }
+
+    @Override
+    public Registration subscribeToConnectionChanges(Runnable listener) {
+        connectionListeners.add(listener);
+        return () -> connectionListeners.remove(listener);
+    }
+    
+    @Override
+    public Registration subscribeToChanges(Consumer<TextOperation> listener) {
+        operationListeners.add(listener);
+        return () -> operationListeners.remove(listener);
     }
 
     private void scheduleReconnect() {
@@ -140,12 +164,6 @@ public class WebSocketCollaborationService implements CollaborationService {
                 logger.error("Error in connection listener", e);
             }
         });
-    }
-    
-    @Override
-    public Registration subscribeToChanges(Consumer<TextOperation> listener) {
-        operationListeners.add(listener);
-        return () -> operationListeners.remove(listener);
     }
     
     private class CollaborationHandler extends TextWebSocketHandler {
