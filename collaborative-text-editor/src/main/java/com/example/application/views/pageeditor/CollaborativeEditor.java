@@ -156,6 +156,8 @@ public class CollaborativeEditor extends VerticalLayout {
      * @param content New content
      */
     private void updateEditorContent(String content) {
+        // Log the content update
+        logger.info("Updating editor content: {}", content);
         // Temporarily remove value change listener to avoid triggering it
         if (editorValueChangeRegistration != null) {
             editorValueChangeRegistration.remove();

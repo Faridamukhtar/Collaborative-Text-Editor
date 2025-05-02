@@ -1,8 +1,7 @@
-package com.example.application.views;
+package com.example.application.views.pageeditor;
 
 import com.example.application.views.pageeditor.socketsLogic.*;
 import com.example.application.views.pageeditor.CRDT.*;
-import com.example.application.views.pageeditor.*;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;

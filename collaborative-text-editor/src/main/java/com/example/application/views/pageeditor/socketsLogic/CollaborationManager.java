@@ -1,4 +1,4 @@
-package com.example.application.views.pageeditor;
+package com.example.application.views.pageeditor.socketsLogic;
 
 import com.example.application.views.pageeditor.CRDT.*;
 import com.example.application.views.pageeditor.socketsLogic.CollaborationService;
@@ -57,7 +57,7 @@ public class CollaborationManager {
                 crdt.initialize(initialContent);
                 // Update local content reference atomically
                 localContent.set(initialContent != null ? initialContent : "");
-                
+                System.out.println("Initial content set: " + localContent.get());
                 notifyContentChanged();
             });
     }
@@ -74,7 +74,8 @@ public class CollaborationManager {
         
         // Get current content without locks
         String currentContent = localContent.get();
-        
+        System.out.println("current content set: " + localContent.get());
+        System.out.println("clientId" + collaborationService.getClientId());
         if (newContent.equals(currentContent)) {
             return;
         }
@@ -113,6 +114,8 @@ public class CollaborationManager {
      */
     public Registration setContentChangeListener(Consumer<String> listener) {
         onContentChangeListener.set(listener);
+        System.out.println("setContentChangeListener: " + listener);
+        
         return () -> onContentChangeListener.set(null);
     }
     
@@ -216,6 +219,7 @@ public class CollaborationManager {
         // Get current listener reference without locks
         Consumer<String> listener = onContentChangeListener.get();
         if (listener != null) {
+            System.out.println("Notifying content change: " + currentContent);
             listener.accept(currentContent);
         }
     }
