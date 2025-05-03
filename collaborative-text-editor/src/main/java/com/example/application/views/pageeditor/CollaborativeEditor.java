@@ -10,6 +10,8 @@ import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.router.PageTitle;
+import com.vaadin.flow.router.Route;
 import com.vaadin.flow.shared.Registration;
 
 import org.slf4j.Logger;
@@ -18,6 +20,8 @@ import org.slf4j.LoggerFactory;
 /**
  * A collaborative text editor component that uses CRDT for conflict-free editing
  */
+@PageTitle("Collaborative Editor")
+@Route("")
 public class CollaborativeEditor extends VerticalLayout {
     private static final Logger logger = LoggerFactory.getLogger(CollaborativeEditor.class);
     

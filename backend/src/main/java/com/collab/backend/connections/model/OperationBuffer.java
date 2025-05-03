@@ -1,4 +1,4 @@
-package com.example.application.connections.model;
+package com.collab.backend.connections.model;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;

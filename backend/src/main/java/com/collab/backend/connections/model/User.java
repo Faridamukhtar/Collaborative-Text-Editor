@@ -1,4 +1,4 @@
-package com.example.application.connections.model;
+package com.collab.backend.connections.model;
 
 public class User {
     private String id;

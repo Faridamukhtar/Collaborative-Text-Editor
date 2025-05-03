@@ -58,11 +58,4 @@ public interface CollaborationService {
      * @return A registration that can be used to unsubscribe
      */
     Registration subscribeToConnectionChanges(Runnable listener);
-
-    /**
-     * Get the client ID of this service
-     * 
-     * @return The client ID
-     */
-    String getClientId();
 }

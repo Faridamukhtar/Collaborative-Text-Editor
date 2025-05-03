@@ -75,7 +75,6 @@ public class CollaborationManager {
         // Get current content without locks
         String currentContent = localContent.get();
         System.out.println("current content set: " + localContent.get());
-        System.out.println("clientId" + collaborationService.getClientId());
         if (newContent.equals(currentContent)) {
             return;
         }

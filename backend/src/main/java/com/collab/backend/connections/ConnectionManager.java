@@ -1,7 +1,7 @@
-package com.example.application.connections;
+package com.collab.backend.connections;
 
 import java.util.concurrent.ConcurrentHashMap;
-import com.example.application.connections.model.CollaborativeSession;
+import com.collab.backend.connections.model.CollaborativeSession;
 
 public class ConnectionManager {
     private static ConcurrentHashMap<String, CollaborativeSession> activeSessions = new ConcurrentHashMap<>();

@@ -1,8 +1,9 @@
-
 package com.example.application.views.pageeditor.socketsLogic;
-import com.example.application.views.pageeditor.CRDT.*;
 
+import com.example.application.views.pageeditor.CRDT.TextOperation;
 import com.vaadin.flow.shared.Registration;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.*;
@@ -17,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
- * WebSocket implementation of CollaborationService
+ * WebSocket implementation of CollaborationService, adapted for Spring Boot backend.
  */
 public class WebSocketCollaborationService implements CollaborationService {
     private static final Logger logger = LoggerFactory.getLogger(WebSocketCollaborationService.class);
@@ -36,12 +37,6 @@ public class WebSocketCollaborationService implements CollaborationService {
     private final AtomicBoolean isConnected = new AtomicBoolean(false);
     private int retryCount = 0;
 
-    /**
-     * Create a new WebSocket collaboration service
-     * @param serverUrl The URL of the WebSocket server
-     * @param documentId The ID of the document
-     * @param userId The ID of the user
-     */
     public WebSocketCollaborationService(String serverUrl, String documentId, String userId) {
         this.serverUrl = serverUrl;
         this.documentId = documentId;
@@ -54,9 +49,8 @@ public class WebSocketCollaborationService implements CollaborationService {
         if (isConnected.get()) return;
 
         try {
-            String url = String.format("%s/collab/%s?userId=%s", serverUrl, documentId, userId);
-            client.doHandshake(new CollaborationHandler(), url);
-            logger.info("Connecting to collaboration server: {}", url);
+            client.doHandshake(new CollaborationHandler(), serverUrl + "/collaborate");
+            logger.info("Connecting to collaboration server: {}", serverUrl + "/collaborate");
         } catch (Exception e) {
             logger.error("Connection failed", e);
             scheduleReconnect();
@@ -79,19 +73,8 @@ public class WebSocketCollaborationService implements CollaborationService {
 
     @Override
     public CompletableFuture<String> getInitialContent() {
-        if (isConnected.get()) {
-            return initialStateFuture;
-        } else {
-            CompletableFuture<String> future = new CompletableFuture<>();
-            connectionListeners.add(() -> {
-                if (isConnected.get()) {
-                    future.complete(initialStateFuture.join());
-                } else {
-                    future.completeExceptionally(new IllegalStateException("Not connected"));
-                }
-            });
-            return future;
-        }
+        // Return empty or wait for initialStateFuture if you plan to implement INIT logic on server
+        return CompletableFuture.completedFuture("");
     }
 
     @Override
@@ -102,9 +85,12 @@ public class WebSocketCollaborationService implements CollaborationService {
         }
 
         try {
-            String message = "OP:" + OperationSerializer.serialize(operation);
-            session.sendMessage(new TextMessage(message));
-            logger.debug("Sent operation: {}", operation);
+            JsonObject msg = new JsonObject();
+            msg.addProperty("type", "edit");
+            msg.addProperty("sessionCode", documentId);
+            msg.addProperty("editOperation", OperationSerializer.serialize(operation));
+            session.sendMessage(new TextMessage(msg.toString()));
+            logger.debug("Sent edit operation");
         } catch (IOException e) {
             logger.error("Failed to send operation", e);
             handleConnectionError();
@@ -121,7 +107,7 @@ public class WebSocketCollaborationService implements CollaborationService {
         connectionListeners.add(listener);
         return () -> connectionListeners.remove(listener);
     }
-    
+
     @Override
     public Registration subscribeToOperations(Consumer<TextOperation> listener) {
         operationListeners.add(listener);
@@ -165,7 +151,7 @@ public class WebSocketCollaborationService implements CollaborationService {
             }
         });
     }
-    
+
     private class CollaborationHandler extends TextWebSocketHandler {
         @Override
         public void afterConnectionEstablished(WebSocketSession session) {
@@ -174,21 +160,38 @@ public class WebSocketCollaborationService implements CollaborationService {
             retryCount = 0;
             notifyConnectionChanged();
             logger.info("Connected to collaboration server");
+
+            // Immediately send join message
+            JsonObject joinMsg = new JsonObject();
+            joinMsg.addProperty("type", "join");
+            joinMsg.addProperty("userId", userId);
+            joinMsg.addProperty("role", "editor");
+            joinMsg.addProperty("sessionCode", documentId);
+
+            try {
+                session.sendMessage(new TextMessage(joinMsg.toString()));
+                logger.debug("Sent join message");
+            } catch (IOException e) {
+                logger.error("Failed to send join message", e);
+            }
         }
 
         @Override
         protected void handleTextMessage(WebSocketSession session, TextMessage message) {
             try {
                 String payload = message.getPayload();
-                if (payload.startsWith("INIT:")) {
-                    handleInitialState(payload.substring(5));
-                } else if (payload.startsWith("OP:")) {
-                    handleOperation(payload.substring(3));
-                } else if (payload.equals("PING")) {
-                    handlePing();
+                JsonObject msg = JsonParser.parseString(payload).getAsJsonObject();
+
+                String type = msg.get("type").getAsString();
+                if (type.equals("edit")) {
+                    String opJson = msg.get("editOperation").getAsString();
+                    TextOperation operation = OperationSerializer.deserialize(opJson);
+                    notifyOperationReceived(operation);
+                } else {
+                    logger.warn("Unknown message type: {}", type);
                 }
             } catch (Exception e) {
-                logger.error("Error handling message", e);
+                logger.error("Error handling incoming message", e);
             }
         }
 
@@ -202,29 +205,6 @@ public class WebSocketCollaborationService implements CollaborationService {
         public void handleTransportError(WebSocketSession session, Throwable exception) {
             logger.error("Transport error", exception);
             handleConnectionError();
-        }
-
-        private void handleInitialState(String content) {
-            logger.debug("Received initial state");
-            initialStateFuture.complete(content);
-        }
-
-        private void handleOperation(String operationJson) {
-            try {
-                TextOperation operation = OperationSerializer.deserialize(operationJson);
-                logger.debug("Received operation: {}", operation);
-                notifyOperationReceived(operation);
-            } catch (Exception e) {
-                logger.error("Failed to deserialize operation", e);
-            }
-        }
-
-        private void handlePing() {
-            try {
-                session.sendMessage(new TextMessage("PONG"));
-            } catch (IOException e) {
-                logger.warn("Failed to send PONG", e);
-            }
         }
     }
 }
