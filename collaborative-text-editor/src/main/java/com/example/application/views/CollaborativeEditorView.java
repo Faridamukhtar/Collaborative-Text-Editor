@@ -32,6 +32,7 @@ public class CollaborativeEditorView extends VerticalLayout implements HasUrlPar
     private final Div userPresenceContainer;
     private final Map<String, Span> userBadges = new HashMap<>();
     private final AtomicBoolean isApplyingRemoteChanges = new AtomicBoolean(false);
+    private final CRDTClientDocument crdtDocument = new CRDTClientDocument();
 
     private String documentId;
     private final String userId;
@@ -55,18 +56,26 @@ public class CollaborativeEditorView extends VerticalLayout implements HasUrlPar
         setSizeFull();
 
         editor.addValueChangeListener(e -> {
-            logger.info("Editor content changed by user {}", userId);
-            if (!isApplyingRemoteChanges.get()) {
-                logger.info("User {} changed editor content", userId);
-                Operation operation = new Operation.Builder()
+            if (!isApplyingRemoteChanges.get() && e.getValue() != null) {
+                try {
+                    Operation operation = new Operation.Builder()
                         .type(Operation.Type.UPDATE)
                         .userId(userId)
-                        .content(e.getValue())
+                        .content(e.getValue()) // Full content (for now, until fine-grained CRDT used)
                         .build();
-                logger.info("Sending operation: {}", operation);
-                webSocketService.sendOperation(operation);
+        
+                    crdtDocument.apply(operation); // apply locally
+        
+                    ui.setPollInterval(300);
+                    logger.info("Sending operation: {}", operation);
+                    webSocketService.sendOperation(operation);
+                } catch (Exception ex) {
+                    logger.error("Error creating operation", ex);
+                }
             }
         });
+        
+
     }
 
     @Override
@@ -81,6 +90,7 @@ public class CollaborativeEditorView extends VerticalLayout implements HasUrlPar
                 this::handleUserLeft);
 
         webSocketService.setSyncCallback(content -> ui.access(() -> {
+            crdtDocument.setInitialContent(content);
             isApplyingRemoteChanges.set(true);
             editor.setValue(content);
             isApplyingRemoteChanges.set(false);
@@ -91,14 +101,15 @@ public class CollaborativeEditorView extends VerticalLayout implements HasUrlPar
 
     private void handleOperationReceived(Operation operation) {
         ui.access(() -> {
-            logger.info("Received remote operation: {}", operation);
             if (operation.getType() == Operation.Type.UPDATE) {
+                crdtDocument.apply(operation);
                 isApplyingRemoteChanges.set(true);
-                editor.setValue(operation.getContent());
+                editor.setValue(crdtDocument.getContent());
                 isApplyingRemoteChanges.set(false);
             }
         });
     }
+    
 
     private void handleCursorMoved(Object position) {
         logger.info("Cursor moved (not implemented): {}", position);

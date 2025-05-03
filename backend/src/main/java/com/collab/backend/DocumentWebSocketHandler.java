@@ -1,5 +1,7 @@
 package com.collab.backend;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +11,7 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.socket.server.support.HttpSessionHandshakeInterceptor;
 
 import java.io.IOException;
 import java.util.Map;
@@ -46,55 +49,66 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
             sessionDocumentMap.put(session.getId(), documentId);
 
             documentCrdts.computeIfAbsent(documentId, k -> {
-                // Load the document into a CRDT
-                System.out.println("Loading document into CRDT: " + documentId);
                 TreeCrdt crdt = new TreeCrdt();
                 documentService.loadDocumentToCrdt(documentId, crdt);
-                System.out.println("Document loaded into CRDT: " + crdt);
                 return crdt;
             });
 
             broadcastUserJoined(documentId, userId, session.getId());
-
             logger.info("User {} connected to document {}", userId, documentId);
         }
     }
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
         String documentId = sessionDocumentMap.get(session.getId());
-
         if (documentId == null) {
             logger.warn("Session {} not associated with any document", session.getId());
+            session.close(CloseStatus.BAD_DATA.withReason("No document associated"));
             return;
         }
 
-        System.out.println("Received message: " + message.getPayload());
+        try {
+            WebSocketMessage webSocketMessage = objectMapper.readValue(message.getPayload(), WebSocketMessage.class);
+            
+            if (webSocketMessage == null || webSocketMessage.getType() == null) {
+                session.sendMessage(new TextMessage("{\"error\":\"Invalid message format\"}"));
+                return;
+            }
 
-        WebSocketMessage webSocketMessage = objectMapper.readValue(message.getPayload(), WebSocketMessage.class);
-
-        switch (webSocketMessage.getType()) {
-            case OPERATION:
-                handleOperation(documentId, webSocketMessage.getOperation(), session);
-                break;
-            case CURSOR_MOVE:
-                broadcastCursorPosition(documentId, webSocketMessage.getCursorPosition(), session);
-                break;
-            case REQUEST_SYNC:
-                sendDocumentState(session, documentId);
-                break;
-            case USER_PRESENCE:
-                handleUserPresence(documentId, webSocketMessage.getUserPresence(), session);
-                break;
-            default:
-                logger.warn("Unknown message type: {}", webSocketMessage.getType());
+            switch (webSocketMessage.getType()) {
+                case OPERATION:
+                    if (validateOperation(webSocketMessage.getOperation())) {
+                        handleOperation(documentId, webSocketMessage.getOperation(), session);
+                    } else {
+                        session.sendMessage(new TextMessage("{\"error\":\"Invalid operation format\"}"));
+                    }
+                    break;
+                case CURSOR_MOVE:
+                    broadcastCursorPosition(documentId, webSocketMessage.getCursorPosition(), session);
+                    break;
+                case REQUEST_SYNC:
+                    sendDocumentState(session, documentId);
+                    break;
+                case USER_PRESENCE:
+                    handleUserPresence(documentId, webSocketMessage.getUserPresence(), session);
+                    break;
+                default:
+                    logger.warn("Unknown message type: {}", webSocketMessage.getType());
+                    session.sendMessage(new TextMessage("{\"error\":\"Unknown message type\"}"));
+            }
+        } catch (JsonProcessingException e) {
+            logger.error("JSON parsing error", e);
+            session.sendMessage(new TextMessage("{\"error\":\"Invalid JSON format\"}"));
+        } catch (Exception e) {
+            logger.error("Error processing message", e);
+            session.sendMessage(new TextMessage("{\"error\":\"Server error: " + e.getMessage() + "\"}"));
         }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         String documentId = sessionDocumentMap.get(session.getId());
-
         if (documentId != null) {
             Map<String, WebSocketSession> sessions = documentSessions.get(documentId);
             if (sessions != null) {
@@ -114,28 +128,47 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
                     documentOnlineUsers.remove(documentId);
                 }
             }
-
             sessionDocumentMap.remove(session.getId());
-            logger.info("Connection closed for session: {}", session.getId());
+            logger.info("Connection closed for session {} with status {}", session.getId(), status);
         }
     }
 
-    // ========== Core Handlers ==========
+    private boolean validateOperation(Operation operation) {
+        return operation != null 
+               && operation.getType() != null
+               && operation.getUserId() != null
+               && (operation.getType() != Operation.Type.INSERT || 
+                  (operation.getParentId() != null && operation.getContent() != null));
+    }
 
-    private void handleOperation(String documentId, Operation operation, WebSocketSession senderSession) {
-        TreeCrdt crdt = documentCrdts.get(documentId);
-
-        if (crdt != null && crdt.applyOperation(operation)) {
-            broadcastOperation(documentId, operation, senderSession.getId());
+    private void handleOperation(String documentId, Operation operation, WebSocketSession session) {
+        try {
+            if (operation == null || operation.getType() == null) {
+                logger.warn("Received invalid operation");
+                return;
+            }
+    
+            TreeCrdt crdt = documentCrdts.get(documentId);
+            if (crdt == null) {
+                logger.error("No CRDT found for document {}", documentId);
+                return;
+            }
+    
+            if (!crdt.applyOperation(operation)) {
+                logger.warn("Failed to apply operation: {}", operation);
+                return;
+            }
+    
+            broadcastOperation(documentId, operation, session.getId());
             documentService.saveDocumentFromCrdt(documentId, crdt);
+        } catch (Exception e) {
+            logger.error("Error handling operation", e);
         }
     }
 
     private void handleUserPresence(String documentId, UserPresence presence, WebSocketSession session) {
         String userId = presence.getUserId();
         boolean isOnline = presence.isOnline();
-
-        logger.info("User presence received: {} -> {}", userId, isOnline);
 
         if (isOnline) {
             documentOnlineUsers
@@ -147,36 +180,26 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
                 onlineUsers.remove(userId);
             }
         }
-
-        // Optional rebroadcast (or only used in afterConnectionEstablished / afterConnectionClosed)
-        // broadcast(documentId, new WebSocketMessage(WebSocketMessage.Type.USER_PRESENCE, presence), session.getId());
     }
 
     private void broadcastOperation(String documentId, Operation operation, String excludeSessionId) {
-        WebSocketMessage message = new WebSocketMessage(WebSocketMessage.Type.OPERATION, operation);
-        broadcast(documentId, message, excludeSessionId);
+        broadcast(documentId, new WebSocketMessage(WebSocketMessage.Type.OPERATION, operation), excludeSessionId);
     }
 
     private void broadcastCursorPosition(String documentId, CursorPosition cursorPosition, WebSocketSession senderSession) {
-        WebSocketMessage message = new WebSocketMessage(WebSocketMessage.Type.CURSOR_MOVE, cursorPosition);
-        broadcast(documentId, message, senderSession.getId());
+        broadcast(documentId, new WebSocketMessage(WebSocketMessage.Type.CURSOR_MOVE, cursorPosition), senderSession.getId());
     }
 
     private void broadcastUserJoined(String documentId, String userId, String sessionId) {
-        UserPresence presence = new UserPresence(userId, true);
-        WebSocketMessage message = new WebSocketMessage(WebSocketMessage.Type.USER_PRESENCE, presence);
-        broadcast(documentId, message, sessionId);
+        broadcast(documentId, new WebSocketMessage(WebSocketMessage.Type.USER_PRESENCE, new UserPresence(userId, true)), sessionId);
     }
 
     private void broadcastUserLeft(String documentId, String userId, String sessionId) {
-        UserPresence presence = new UserPresence(userId, false);
-        WebSocketMessage message = new WebSocketMessage(WebSocketMessage.Type.USER_PRESENCE, presence);
-        broadcast(documentId, message, null); // broadcast to all
+        broadcast(documentId, new WebSocketMessage(WebSocketMessage.Type.USER_PRESENCE, new UserPresence(userId, false)), null);
     }
 
     private void broadcast(String documentId, WebSocketMessage message, String excludeSessionId) {
         Map<String, WebSocketSession> sessions = documentSessions.get(documentId);
-
         if (sessions != null) {
             try {
                 String payload = objectMapper.writeValueAsString(message);
@@ -197,19 +220,13 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void sendDocumentState(WebSocketSession session, String documentId) {
+    private void sendDocumentState(WebSocketSession session, String documentId) throws IOException {
         TreeCrdt crdt = documentCrdts.get(documentId);
-
         if (crdt != null) {
-            try {
-                Document document = documentService.getLiveDocument(documentId, crdt);
-                WebSocketMessage message = new WebSocketMessage(WebSocketMessage.Type.SYNC_RESPONSE, document);
-                String payload = objectMapper.writeValueAsString(message);
-                session.sendMessage(new TextMessage(payload));
-                System.out.println("Document state sent to session: " + session.getId());
-            } catch (IOException e) {
-                logger.error("Failed to send document state", e);
-            }
+            Document document = documentService.getLiveDocument(documentId, crdt);
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(
+                new WebSocketMessage(WebSocketMessage.Type.SYNC_RESPONSE, document)
+            )));
         }
     }
 
@@ -221,21 +238,28 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
         return (String) session.getAttributes().get("userId");
     }
 
-    // ========== Inner Message Classes ==========
-
     public static class WebSocketMessage {
         public enum Type {
-            OPERATION,
-            CURSOR_MOVE,
-            USER_PRESENCE,
-            REQUEST_SYNC,
-            SYNC_RESPONSE
+            @JsonProperty("OPERATION") OPERATION,
+            @JsonProperty("CURSOR_MOVE") CURSOR_MOVE,
+            @JsonProperty("USER_PRESENCE") USER_PRESENCE,
+            @JsonProperty("REQUEST_SYNC") REQUEST_SYNC,
+            @JsonProperty("SYNC_RESPONSE") SYNC_RESPONSE
         }
 
+        @JsonProperty("type")
         private Type type;
+        
+        @JsonProperty("operation")
         private Operation operation;
+        
+        @JsonProperty("cursorPosition")
         private CursorPosition cursorPosition;
+        
+        @JsonProperty("userPresence")
         private UserPresence userPresence;
+        
+        @JsonProperty("document")
         private Document document;
 
         public WebSocketMessage() {}
@@ -260,40 +284,33 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
             this.document = document;
         }
 
-        // Getters & setters
         public Type getType() { return type; }
-        public void setType(Type type) { this.type = type; }
-
         public Operation getOperation() { return operation; }
-        public void setOperation(Operation operation) { this.operation = operation; }
-
         public CursorPosition getCursorPosition() { return cursorPosition; }
-        public void setCursorPosition(CursorPosition cursorPosition) { this.cursorPosition = cursorPosition; }
-
         public UserPresence getUserPresence() { return userPresence; }
-        public void setUserPresence(UserPresence userPresence) { this.userPresence = userPresence; }
-
         public Document getDocument() { return document; }
-        public void setDocument(Document document) { this.document = document; }
     }
 
     public static class CursorPosition {
+        @JsonProperty("userId")
         private String userId;
+        
+        @JsonProperty("nodeId")
         private String nodeId;
+        
+        @JsonProperty("offset")
         private int offset;
 
         public String getUserId() { return userId; }
-        public void setUserId(String userId) { this.userId = userId; }
-
         public String getNodeId() { return nodeId; }
-        public void setNodeId(String nodeId) { this.nodeId = nodeId; }
-
         public int getOffset() { return offset; }
-        public void setOffset(int offset) { this.offset = offset; }
     }
 
     public static class UserPresence {
+        @JsonProperty("userId")
         private String userId;
+        
+        @JsonProperty("online")
         private boolean online;
 
         public UserPresence() {}
@@ -304,9 +321,6 @@ public class DocumentWebSocketHandler extends TextWebSocketHandler {
         }
 
         public String getUserId() { return userId; }
-        public void setUserId(String userId) { this.userId = userId; }
-
         public boolean isOnline() { return online; }
-        public void setOnline(boolean online) { this.online = online; }
     }
 }

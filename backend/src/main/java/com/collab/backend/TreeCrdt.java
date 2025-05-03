@@ -1,23 +1,32 @@
-
 package com.collab.backend;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Implementation of a Tree CRDT (Conflict-free Replicated Data Type)
- * for collaborative document editing
+ * Enhanced Tree CRDT (Conflict-free Replicated Data Type)
+ * with version vectors for collaborative document editing
  */
 @Component
 public class TreeCrdt {
+    private static final Logger logger = LoggerFactory.getLogger(TreeCrdt.class);
+    
     private final DocumentNode root;
     private final Map<String, DocumentNode> nodeMap;
+    private final Map<String, AtomicLong> versionVector;
+    private final List<Operation> operationHistory;
+    private final int MAX_HISTORY_SIZE = 100; // Limit history size
     
     public TreeCrdt() {
         this.root = new DocumentNode("root", "system");
         this.nodeMap = new ConcurrentHashMap<>();
+        this.versionVector = new ConcurrentHashMap<>();
+        this.operationHistory = Collections.synchronizedList(new ArrayList<>());
         nodeMap.put(root.getId(), root);
     }
     
@@ -27,15 +36,89 @@ public class TreeCrdt {
      * @return true if the operation was applied successfully
      */
     public synchronized boolean applyOperation(Operation operation) {
+        // Skip if operation is null or missing critical data
+        if (operation == null || operation.getUserId() == null) {
+            logger.warn("Invalid operation: {}", operation);
+            return false;
+        }
+        
+        // Check if operation is outdated based on version vectors
+        if (isOperationOutdated(operation)) {
+            logger.info("Operation is outdated and will be ignored: {}", operation);
+            return false;
+        }
+        
+        boolean result = false;
+        
         switch (operation.getType()) {
             case INSERT:
-                return handleInsert(operation);
+                result = handleInsert(operation);
+                break;
             case UPDATE:
-                return handleUpdate(operation);
+                result = handleUpdate(operation);
+                break;
             case DELETE:
-                return handleDelete(operation);
+                result = handleDelete(operation);
+                break;
             default:
                 return false;
+        }
+        
+        if (result) {
+            // Update version vector for this user
+            versionVector.computeIfAbsent(operation.getUserId(), k -> new AtomicLong(0))
+                        .incrementAndGet();
+            
+            // Add to history
+            addToHistory(operation);
+            
+            // Log success
+            logger.info("Applied operation: {}", operation);
+        }
+        
+        return result;
+    }
+    
+    /**
+     * Determine if an operation is outdated based on version vectors
+     */
+    private boolean isOperationOutdated(Operation operation) {
+        AtomicLong currentVersion = versionVector.get(operation.getUserId());
+        
+        // If we haven't seen this user before, accept the operation
+        if (currentVersion == null) {
+            return false;
+        }
+        
+        // Compare with timestamp for this simple implementation
+        // A more robust approach would use Lamport timestamps or version vectors
+        return operation.getTimestamp() < getLastOperationForUser(operation.getUserId());
+    }
+    
+    /**
+     * Get the timestamp of the last operation from a specific user
+     */
+    private long getLastOperationForUser(String userId) {
+        synchronized (operationHistory) {
+            for (int i = operationHistory.size() - 1; i >= 0; i--) {
+                Operation op = operationHistory.get(i);
+                if (op.getUserId().equals(userId)) {
+                    return op.getTimestamp();
+                }
+            }
+        }
+        return 0;
+    }
+    
+    /**
+     * Add operation to history, maintaining size limit
+     */
+    private void addToHistory(Operation operation) {
+        synchronized (operationHistory) {
+            operationHistory.add(operation);
+            if (operationHistory.size() > MAX_HISTORY_SIZE) {
+                operationHistory.remove(0);
+            }
         }
     }
     
@@ -44,12 +127,32 @@ public class TreeCrdt {
         DocumentNode parent = nodeMap.get(parentId);
         
         if (parent == null) {
+            logger.warn("Parent node not found for insert: {}", parentId);
             return false;
         }
         
+        // Create new node
+        String newNodeId = operation.getNodeId() != null ? 
+                           operation.getNodeId() : 
+                           UUID.randomUUID().toString();
+                           
         DocumentNode newNode = new DocumentNode(operation.getContent(), operation.getUserId());
+        if (operation.getNodeId() != null) {
+            // Override the autogenerated ID if one was provided
+            try {
+                java.lang.reflect.Field field = DocumentNode.class.getDeclaredField("id");
+                field.setAccessible(true);
+                field.set(newNode, newNodeId);
+            } catch (Exception e) {
+                logger.error("Failed to set node ID", e);
+                return false;
+            }
+        }
+        
+        // Add to node map
         nodeMap.put(newNode.getId(), newNode);
         
+        // Add to parent at specified position
         int position = Math.min(operation.getPosition(), parent.getChildren().size());
         parent.addChildAt(newNode, position);
         
@@ -59,10 +162,34 @@ public class TreeCrdt {
     private boolean handleUpdate(Operation operation) {
         DocumentNode node = nodeMap.get(operation.getNodeId());
         
-        if (node == null || node.isTombstone()) {
+        if (node == null) {
+            logger.warn("Node not found for update: {}", operation.getNodeId());
             return false;
         }
         
+        if (node.isTombstone()) {
+            logger.warn("Cannot update tombstone node: {}", operation.getNodeId());
+            return false;
+        }
+        
+        // For update operations, check for conflicts and merge if needed
+        if (node.getTimestamp() > operation.getTimestamp()) {
+            // This is a conflict - the node was modified after this operation was created
+            // In a real implementation, you'd use a more sophisticated merge strategy
+            // For now, we'll apply a simple "last writer wins" policy with the content
+            logger.info("Conflict detected on node {}. Local timestamp: {}, Operation timestamp: {}", 
+                    node.getId(), node.getTimestamp(), operation.getTimestamp());
+            
+            // Merge content - in a real application this would be more sophisticated
+            // Here we just take the newer update
+            if (node.getTimestamp() < operation.getTimestamp()) {
+                node.setContent(operation.getContent());
+                return true;
+            }
+            return false;
+        }
+        
+        // No conflict, simple update
         node.setContent(operation.getContent());
         return true;
     }
@@ -70,12 +197,48 @@ public class TreeCrdt {
     private boolean handleDelete(Operation operation) {
         DocumentNode node = nodeMap.get(operation.getNodeId());
         
-        if (node == null || node.isTombstone() || node == root) {
+        if (node == null) {
+            logger.warn("Node not found for delete: {}", operation.getNodeId());
             return false;
         }
         
+        if (node.isTombstone()) {
+            logger.warn("Node already deleted: {}", operation.getNodeId());
+            return false;
+        }
+        
+        if (node == root) {
+            logger.warn("Cannot delete root node");
+            return false;
+        }
+        
+        // Mark as deleted (tombstone)
         node.markAsDeleted();
         return true;
+    }
+    
+    /**
+     * Calculate the difference between two states of the document
+     * @param fromContent The previous content
+     * @param toContent The new content
+     * @param userId The user making the change
+     * @return An operation representing the difference
+     */
+    public Operation createDeltaOperation(String fromContent, String toContent, String userId) {
+        if (fromContent == null || toContent == null) {
+            logger.warn("Cannot create delta with null content");
+            return null;
+        }
+        
+        // This is a simple full content replacement
+        // In a real implementation, you would calculate the actual diff
+        // and generate more granular operations
+        return new Operation.Builder()
+                .type(Operation.Type.UPDATE)
+                .nodeId(root.getId())
+                .content(toContent)
+                .userId(userId)
+                .build();
     }
     
     /**
@@ -115,5 +278,35 @@ public class TreeCrdt {
      */
     public DocumentNode getRoot() {
         return root;
+    }
+    
+    /**
+     * Get the current version vector
+     * @return A map of user IDs to their current versions
+     */
+    public Map<String, Long> getVersionVector() {
+        Map<String, Long> result = new HashMap<>();
+        for (Map.Entry<String, AtomicLong> entry : versionVector.entrySet()) {
+            result.put(entry.getKey(), entry.getValue().get());
+        }
+        return result;
+    }
+    
+    /**
+     * Get operations since a specific version for a user
+     * @param userId The user ID
+     * @param since The version to start from
+     * @return List of operations since the specified version
+     */
+    public List<Operation> getOperationsSince(String userId, long since) {
+        List<Operation> result = new ArrayList<>();
+        synchronized (operationHistory) {
+            for (Operation op : operationHistory) {
+                if (op.getUserId().equals(userId) && op.getTimestamp() > since) {
+                    result.add(op);
+                }
+            }
+        }
+        return result;
     }
 }
