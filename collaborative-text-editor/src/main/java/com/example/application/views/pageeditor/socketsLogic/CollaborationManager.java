@@ -1,0 +1,225 @@
+package com.example.application.views.pageeditor.socketsLogic;
+
+import com.example.application.views.pageeditor.CRDT.*;
+import com.example.application.views.pageeditor.socketsLogic.CollaborationService;
+
+import com.vaadin.flow.shared.Registration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicReference;
+
+/**
+ * Lock-free implementation of the collaboration manager.
+ * Coordinates the TreeBasedCRDT with the network service
+ * without using traditional locks.
+ */
+public class CollaborationManager {
+    private static final Logger logger = LoggerFactory.getLogger(CollaborationManager.class);
+    
+    private final TreeBasedCRDT crdt;
+    private final CollaborationService collaborationService;
+    
+    // Use AtomicReference for thread-safe access without locks
+    private final AtomicReference<String> localContent = new AtomicReference<>("");
+    private final AtomicReference<SelectionState> selectionState = new AtomicReference<>(new SelectionState(0, 0));
+    private final AtomicReference<Consumer<String>> onContentChangeListener = new AtomicReference<>();
+    
+    private Registration operationRegistration;
+    private Registration connectionRegistration;
+    
+    /**
+     * Create a new lock-free collaboration manager
+     * 
+     * @param collaborationService The service for network communication
+     */
+    public CollaborationManager(CollaborationService collaborationService) {
+        this.collaborationService = collaborationService;
+        this.crdt = new TreeBasedCRDT();
+        setupNetworkHandlers();
+    }
+    
+    /**
+     * Initialize the system with the given content
+     * 
+     * @return A future that completes when initialization is done
+     */
+    public CompletableFuture<Void> initialize() {
+        return collaborationService.getInitialContent()
+            .thenAccept(initialContent -> {
+                logger.info("Initializing with content length: {}", 
+                    initialContent != null ? initialContent.length() : 0);
+                
+                // Initialize CRDT with content
+                crdt.initialize(initialContent);
+                // Update local content reference atomically
+                localContent.set(initialContent != null ? initialContent : "");
+                System.out.println("Initial content set: " + localContent.get());
+                notifyContentChanged();
+            });
+    }
+    
+    /**
+     * Update the local text content
+     * 
+     * @param newContent The new text content
+     */
+    public void updateContent(String newContent) {
+        if (newContent == null) {
+            newContent = "";
+        }
+        
+        // Get current content without locks
+        String currentContent = localContent.get();
+        System.out.println("current content set: " + localContent.get());
+        if (newContent.equals(currentContent)) {
+            return;
+        }
+        
+        logger.debug("Content changed from {} to {} chars", currentContent.length(), newContent.length());
+        
+        // Calculate operations needed to transform content
+        List<TextOperation> operations = DeltaCalculator.calculateOperations(
+                currentContent, newContent, crdt);
+        
+        // Atomically update local content
+        localContent.set(newContent);
+        
+        // Send operations to the collaboration service
+        for (TextOperation op : operations) {
+            collaborationService.sendOperation(op);
+        }
+    }
+    
+    /**
+     * Update the selection state
+     * 
+     * @param newSelectionState The new selection state
+     */
+    public void updateSelection(SelectionState newSelectionState) {
+        // Atomically update selection state
+        selectionState.set(newSelectionState);
+        // Here you could also broadcast selection to other users
+    }
+    
+    /**
+     * Set a listener for content changes
+     * 
+     * @param listener A consumer that accepts the new content
+     * @return A registration that can be used to remove the listener
+     */
+    public Registration setContentChangeListener(Consumer<String> listener) {
+        onContentChangeListener.set(listener);
+        System.out.println("setContentChangeListener: " + listener);
+        
+        return () -> onContentChangeListener.set(null);
+    }
+    
+    /**
+     * Connect to the collaboration service
+     */
+    public void connect() {
+        collaborationService.connect();
+    }
+    
+    /**
+     * Disconnect from the collaboration service
+     */
+    public void disconnect() {
+        if (connectionRegistration != null) {
+            connectionRegistration.remove();
+        }
+        if (operationRegistration != null) {
+            operationRegistration.remove();
+        }
+        collaborationService.disconnect();
+    }
+    
+    /**
+     * Get the current selection state
+     */
+    public SelectionState getSelectionState() {
+        return selectionState.get();
+    }
+    
+    /**
+     * Get the current content from the CRDT
+     * 
+     * @return The current text content
+     */
+    public String getContentFromCRDT() {
+        return crdt.getContent();
+    }
+    
+    /**
+     * Set up handlers for network events
+     */
+    private void setupNetworkHandlers() {
+        operationRegistration = collaborationService.subscribeToOperations(this::handleRemoteOperation);
+        connectionRegistration = collaborationService.subscribeToConnectionChanges(this::handleConnectionChange);
+    }
+    
+    /**
+     * Handle connection state changes
+     */
+    private void handleConnectionChange() {
+        boolean connected = collaborationService.isConnected();
+        logger.info("Connection state changed: {}", connected ? "connected" : "disconnected");
+        // You could update UI or take other actions based on connection state
+    }
+    
+    /**
+     * Handle a remote operation without locks
+     * 
+     * @param operation The operation to handle
+     */
+    private void handleRemoteOperation(TextOperation operation) {
+        logger.debug("Received remote operation: {}", operation);
+        
+        // Apply the operation to the CRDT
+        crdt.applyRemote(operation);
+        
+        // Get updated content from the CRDT
+        String newContent = crdt.getContent();
+        
+        // Use compareAndSet to ensure atomic updates
+        // This loop will retry if another thread updates localContent concurrently
+        String currentContent;
+        boolean contentChanged = false;
+        do {
+            currentContent = localContent.get();
+            if (newContent.equals(currentContent)) {
+                // No change needed
+                break;
+            }
+            contentChanged = localContent.compareAndSet(currentContent, newContent);
+        } while (!contentChanged);
+        
+        // Only notify if content actually changed
+        if (contentChanged) {
+            // Notify on a separate thread to avoid blocking
+            CompletableFuture.runAsync(this::notifyContentChanged);
+        }
+        
+        // Acknowledge the operation
+        crdt.acknowledge(operation.getId());
+    }
+    
+    /**
+     * Notify the content change listener
+     */
+    private void notifyContentChanged() {
+        // Get current content reference without locks
+        String currentContent = localContent.get();
+        
+        // Get current listener reference without locks
+        Consumer<String> listener = onContentChangeListener.get();
+        if (listener != null) {
+            System.out.println("Notifying content change: " + currentContent);
+            listener.accept(currentContent);
+        }
+    }
+}
