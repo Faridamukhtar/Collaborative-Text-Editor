@@ -7,28 +7,36 @@ import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.Label;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.Command;
+import com.vaadin.flow.server.VaadinSession;
 
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-@Route("editor")
+@Route("/editor")
 @JsModule("./js/text-editor-connector.js")
 public class CollaborativeTextEditor extends VerticalLayout {
     private final UI ui;
     private final TextArea editor;
     private final String userId;
+    private final String viewCode;
+    private final String editCode;
+
 
     // Store for active users
     private static final ConcurrentHashMap<String, UI> activeUsers = new ConcurrentHashMap<>();
 
     public CollaborativeTextEditor() {
         this.ui = UI.getCurrent();
-        this.userId = UUID.randomUUID().toString();
+        String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
+        this.viewCode = (String) VaadinSession.getCurrent().getAttribute("viewCode");
+        this.editCode = (String) VaadinSession.getCurrent().getAttribute("editCode");
+        this.userId = (String) VaadinSession.getCurrent().getAttribute("userId");
 
         // Register this user
         activeUsers.put(userId, ui);
@@ -47,6 +55,8 @@ public class CollaborativeTextEditor extends VerticalLayout {
 
         // Editor
         editor = new TextArea();
+        if(content != null)
+            editor.setValue(content);
         editor.setWidthFull();
         editor.setHeight("400px");
         editor.setLabel("Edit text below - changes are shared with all users");
@@ -62,6 +72,10 @@ public class CollaborativeTextEditor extends VerticalLayout {
         connectionStatus.setText("Connected Users: " + activeUsers.size());
         connectionStatus.getStyle().set("color", "green");
         add(connectionStatus);
+
+        //Codes:
+        add(new Label("View Code: " + viewCode));
+        add(new Label("Edit Code: " + editCode));
 
         // Reset button
         Button resetButton = new Button("Reset Editor", e -> {
