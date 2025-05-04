@@ -1,4 +1,3 @@
-// src/main/java/com/editor/backend/websocket/WebSocketMessage.java
 package com.example.collaborative_editor.backend.websocket;
 
 import com.example.collaborative_editor.backend.crdt.CrdtChar;
@@ -12,6 +11,7 @@ public class WebSocketMessage {
     private long timestamp;
     private CharacterDTO character;
     private String documentId;
+    private String content;
     
     // Nested class for character data transfer
     public static class CharacterDTO {
@@ -113,5 +113,13 @@ public class WebSocketMessage {
     
     public void setDocumentId(String documentId) {
         this.documentId = documentId;
+    }
+
+    public String getContent() {
+        return content;
+    }
+
+    public void setContent(String content) {
+        this.content = content;
     }
 }

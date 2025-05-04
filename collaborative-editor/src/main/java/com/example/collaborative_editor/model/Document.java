@@ -1,4 +1,3 @@
-// src/main/java/com/editor/model/Document.java
 package com.example.collaborative_editor.model;
 
 import java.time.LocalDateTime;

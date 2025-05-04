@@ -1,4 +1,3 @@
-// src/main/java/com/editor/backend/service/DocumentService.java
 package com.example.collaborative_editor.backend.service;
 
 import com.example.collaborative_editor.backend.crdt.CrdtDocument;

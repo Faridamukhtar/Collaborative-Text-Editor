@@ -49,4 +49,12 @@ public class CrdtChar {
         
         return Integer.compare(position.size(), otherPosition.size());
     }
+
+    public String getUserId() {
+        return metadata.getSiteId();
+    }
+
+    public long getTimestamp() {
+        return metadata.getTimestamp();
+    }
 }

@@ -1,4 +1,3 @@
-// src/main/java/com/editor/backend/crdt/Operation.java
 package com.example.collaborative_editor.backend.crdt;
 
 public class Operation {

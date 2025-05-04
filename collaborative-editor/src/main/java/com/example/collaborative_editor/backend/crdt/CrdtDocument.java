@@ -157,4 +157,49 @@ public class CrdtDocument {
         }
         return sb.toString();
     }
+
+    public String getStateAsJson() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{");
+        sb.append("\"text\":\"").append(toString()).append("\",");
+        sb.append("\"characters\":[");
+        
+        boolean first = true;
+        for (CrdtChar ch : characters) {
+            if (!first) {
+                sb.append(",");
+            }
+            first = false;
+            
+            sb.append("{");
+            sb.append("\"value\":\"").append(ch.getValue()).append("\",");
+            sb.append("\"deleted\":").append(ch.isDeleted()).append(",");
+            sb.append("\"position\":[");
+            
+            boolean firstPos = true;
+            for (Identifier id : ch.getPosition()) {
+                if (!firstPos) {
+                    sb.append(",");
+                }
+                firstPos = false;
+                sb.append("{");
+                sb.append("\"digit\":").append(id.getDigit()).append(",");
+                sb.append("\"siteId\":\"").append(id.getSiteId()).append("\"");
+                sb.append("}");
+            }
+            
+            sb.append("],");
+            sb.append("\"userId\":\"").append(ch.getUserId()).append("\",");
+            sb.append("\"timestamp\":").append(ch.getTimestamp());
+            sb.append("}");
+        }
+        
+        sb.append("]");
+        sb.append("}");
+        return sb.toString();
+    }
+
+    public void clear() {
+        characters.clear();
+    }
 }

@@ -8,24 +8,21 @@ import com.vaadin.flow.router.Route;
 import com.vaadin.flow.router.RouterLink;
 import java.util.UUID;
 
-@Route("")
-public class MainView extends AppLayout {
+@Route(value = "", layout = AppLayout.class)
+public class MainView extends VerticalLayout {
 
     public MainView() {
         H1 title = new H1("Collaborative Text Editor");
         
-        VerticalLayout content = new VerticalLayout();
-        content.setSizeFull();
+        setSizeFull();
         
         Button newDocumentButton = new Button("Create New Document", e -> {
             String documentId = UUID.randomUUID().toString();
             getUI().ifPresent(ui -> ui.navigate(EditorView.class, documentId));
         });
         
-        content.add(title, newDocumentButton);
-        content.setAlignItems(VerticalLayout.Alignment.CENTER);
-        content.setJustifyContentMode(VerticalLayout.JustifyContentMode.CENTER);
-        
-        setContent(content);
+        add(title, newDocumentButton);
+        setAlignItems(Alignment.CENTER);
+        setJustifyContentMode(JustifyContentMode.CENTER);
     }
 }
