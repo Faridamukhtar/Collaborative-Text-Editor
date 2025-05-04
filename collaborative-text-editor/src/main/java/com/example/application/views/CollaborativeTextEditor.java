@@ -1,5 +1,6 @@
 package com.example.application.views;
 
+import com.example.application.connections.CRDT.*;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.UI;
@@ -14,10 +15,11 @@ import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.router.Route;
+import org.springframework.beans.factory.annotation.Autowired;
+
 import com.vaadin.flow.server.Command;
 import com.vaadin.flow.server.StreamResource;
 import com.vaadin.flow.server.VaadinSession;
-
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -28,22 +30,23 @@ import com.vaadin.flow.component.html.Section;
 import com.vaadin.flow.component.icon.VaadinIcon;
 
 
-
 @Route("/editor")
 @JsModule("./js/text-editor-connector.js")
-public class CollaborativeTextEditor extends VerticalLayout {
+public class CollaborativeTextEditor extends VerticalLayout implements CollaborativeEditUiListener {
     private final UI ui;
     private final TextArea editor;
     private final String userId;
+    private boolean suppressInput = false;
     private final String viewCode;
     private final String editCode;
     private Anchor hiddenDownloadLink;
 
-    // Store for active users
-    private static final ConcurrentHashMap<String, UI> activeUsers = new ConcurrentHashMap<>();
+    @Autowired
+    private CollaborativeEditService collaborativeEditService;
 
     public CollaborativeTextEditor() {
         this.ui = UI.getCurrent();
+
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
         String vc = (String) VaadinSession.getCurrent().getAttribute("viewCode");
         String ec = (String) VaadinSession.getCurrent().getAttribute("editCode");
@@ -79,7 +82,6 @@ public class CollaborativeTextEditor extends VerticalLayout {
         editor.setHeight("100%");
         editor.setLabel("Edit text below - changes are shared with all users");
 
-
         if (!viewCode.isEmpty() && editCode.isEmpty()) {
             editor.setReadOnly(true); 
         }  
@@ -103,14 +105,9 @@ public class CollaborativeTextEditor extends VerticalLayout {
         Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
         exportButton.setWidthFull();
         exportButton.addClickListener(e -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
-    
-        Button resetButton = new Button("Reset Editor", e -> {
-            editor.setValue("");
-            broadcastToAll("reset", "", 0);
-            Notification.show("Editor content reset by " + userId);
-        });
-        resetButton.setWidthFull();
-    
+
+        CollaborativeEditService.setUiListener(this);
+          
         Div connectionStatus = new Div();
         connectionStatus.setText("Connected Users: " + activeUsers.size());
         connectionStatus.getStyle().set("color", "black");
@@ -147,43 +144,42 @@ public class CollaborativeTextEditor extends VerticalLayout {
 
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
-        System.out.println("[Insert] User " + userId + " inserted '" + character + "' at pos: " + position);
-        broadcastToAll("insert", character, position);
+        if (suppressInput) return;
+        ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId);
+        collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
-        System.out.println("[Delete] User " + userId + " deleted at pos: " + position);
-        broadcastToAll("delete", "", position);
+        if (suppressInput) return;
+        ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId);
+        collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
-        System.out.println("[Batch Insert] '" + text + "' at pos: " + position);
+        if (suppressInput) return;
         for (int i = 0; i < text.length(); i++) {
             String ch = String.valueOf(text.charAt(i));
-            broadcastToAll("insert", ch, position + i);
+            onCharacterInserted(ch, position + i);
         }
     }
 
     @ClientCallable
     public void onCharacterBatchDeleted(int startPosition, int count) {
-        System.out.println("[Batch Delete] " + count + " chars from pos: " + startPosition);
+        if (suppressInput) return;
         for (int i = 0; i < count; i++) {
-            broadcastToAll("delete", "", startPosition);
+            onCharacterDeleted(startPosition);
         }
     }
 
-    private void broadcastToAll(String operation, String character, int position) {
-        activeUsers.forEach((id, userUI) -> {
-            if (!id.equals(userId)) {
-                userUI.access((Command) () -> {
-                    userUI.getPage().executeJs(
-                        "window.applyRemoteChange($0, $1, $2, $3)",
-                        operation, character, position, userId
-                    );
-                });
-            }
+    @Override
+    public void onServerMessage(String text) {
+        System.out.println("📩 Message received from server in UI: " + text);
+        suppressInput = true;
+        ui.access(() -> {
+            editor.setValue(text); // Won't trigger backend logic if suppression is on
+            suppressInput = false; // Reset after value is set
         });
     }
 

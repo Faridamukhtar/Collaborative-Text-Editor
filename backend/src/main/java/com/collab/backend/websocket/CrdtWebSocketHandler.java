@@ -58,6 +58,9 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
     // }
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
+        System.out.println("Received message: " + message.getPayload());
+
+
         String payload = message.getPayload();
 
         ClientEditRequest clientEditRequest = objectMapper.readValue(payload, ClientEditRequest.class);
@@ -66,7 +69,8 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         String updatedText = objectMapper.writeValueAsString(crdtTree.getText());
 
         for (WebSocketSession s : sessions) {
-            if (s.isOpen() && s != session) {
+            if (s.isOpen()) {
+                System.out.println("Sending message to session: " + s.getId());
                 s.sendMessage(new TextMessage(updatedText));
             }
         }
