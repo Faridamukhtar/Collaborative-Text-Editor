@@ -13,5 +13,14 @@ public class helpers {
                 .replaceAll("&amp;", "&")
                 .trim();
     }
-
+    public static String extractData(String result, String key) {
+        // Assuming the result is in the format: "key: value"
+        String[] parts = result.split(", ");
+        for (String part : parts) {
+            if (part.startsWith(key + ":")) {
+                return part.split(": ")[1];
+            }
+        }
+        return "N/A";
+    }
 }

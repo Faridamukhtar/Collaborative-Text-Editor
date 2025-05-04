@@ -17,7 +17,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
-import javax.management.relation.Role;
+import com.example.application.views.components.helpers;
+
 
 @PageTitle("Start Screen")
 @Route("")
@@ -37,8 +38,9 @@ public class StartView extends VerticalLayout {
         newDocBtn.addClickListener(event -> {
             String result = StartPageData.createNewDocument("");
             if (result.startsWith("userId:")) {
-                extractAndSet(result);
                 VaadinSession.getCurrent().setAttribute("importedText", "");
+                getUI().ifPresent(ui -> ui.navigate(CollaborativeTextEditor.class, result));
+
                 getUI().ifPresent(ui -> ui.navigate("/editor"));
 
             } else {
@@ -67,10 +69,8 @@ public class StartView extends VerticalLayout {
                 String result = StartPageData.createNewDocument(content);
 
                 if (result.startsWith("userId:")) {
-                    extractAndSet(result);
-
                     VaadinSession.getCurrent().setAttribute("importedText", content);
-                    getUI().ifPresent(ui -> ui.navigate("/editor"));
+                    getUI().ifPresent(ui -> ui.navigate(CollaborativeTextEditor.class, result));
                 } else {
                     Notification.show("Failed to create document: " + result, 5000, Notification.Position.MIDDLE);
                 }
@@ -94,20 +94,19 @@ public class StartView extends VerticalLayout {
             if (!code.isEmpty()) {
                 String response = StartPageData.joinDocument(code, "guestUser");
                 if (response.startsWith("userId:")) {
-                    String userId = extractData(response, "userId");
-                    String role = extractData(response, "role");
-                    String viewCode = "", editCode = "";
+                    String userId = helpers.extractData(response, "userId");
+                    String role = helpers.extractData(response, "role");
+                    String viewCode = "Hidden", editCode = "Hidden";
                     if ("viewer".equals(role))
                         viewCode = code;
                     else
                         editCode = code;
-                    VaadinSession.getCurrent().setAttribute("userId", userId);
-                    VaadinSession.getCurrent().setAttribute("role", role);
-                    VaadinSession.getCurrent().setAttribute("viewCode", viewCode);
-                    VaadinSession.getCurrent().setAttribute("editCode", editCode);
+                    String params = "userId: " + userId +
+                            ", role: " + role + 
+                        ", viewCode: " + viewCode +
+                        ", editCode: " + editCode;
 
-                    // Navigate to the page-editor view with query parameters
-                    getUI().ifPresent(ui -> ui.navigate("/editor"));
+                    getUI().ifPresent(ui -> ui.navigate(CollaborativeTextEditor.class, params));
                 } else {
                     Notification.show("Join failed: " + response, 5000, Notification.Position.MIDDLE);
                 }
@@ -126,25 +125,5 @@ public class StartView extends VerticalLayout {
         add(mainLayout);
     }
 
-    private String extractData(String result, String key) {
-        // Assuming the result is in the format: "key: value"
-        String[] parts = result.split(", ");
-        for (String part : parts) {
-            if (part.startsWith(key + ":")) {
-                return part.split(": ")[1];
-            }
-        }
-        return "";
-    }
 
-    private void extractAndSet(String result) {
-        String userId = extractData(result, "userId");
-        String role = extractData(result, "role");
-        String viewCode = extractData(result, "viewCode");
-        String editCode = extractData(result, "editCode");
-        VaadinSession.getCurrent().setAttribute("userId", userId);
-        VaadinSession.getCurrent().setAttribute("role", role);
-        VaadinSession.getCurrent().setAttribute("viewCode", viewCode);
-        VaadinSession.getCurrent().setAttribute("editCode", editCode);
-    }
 }

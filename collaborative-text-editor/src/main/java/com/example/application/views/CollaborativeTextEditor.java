@@ -8,10 +8,16 @@ import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
+<<<<<<< HEAD
 import com.vaadin.flow.component.html.H3;
+=======
+import com.vaadin.flow.component.icon.VaadinIcon;
+>>>>>>> 4fc5b01750de9371146a578b7cb082a63831a962
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
+import com.vaadin.flow.router.BeforeEvent;
+import com.vaadin.flow.router.HasUrlParameter;
 import com.vaadin.flow.router.Route;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -23,18 +29,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 import com.example.application.views.components.SidebarUtil;
 import com.example.application.views.components.helpers;
-import com.vaadin.flow.component.icon.VaadinIcon;
 
 
 @Route("/editor")
 @JsModule("./js/text-editor-connector.js")
-public class CollaborativeTextEditor extends VerticalLayout implements CollaborativeEditUiListener {
-    private final UI ui;
-    private final TextArea editor;
-    private final String userId;
+public class CollaborativeTextEditor extends VerticalLayout implements CollaborativeEditUiListener, HasUrlParameter<String> {
+
+    private UI ui;
+    private TextArea editor;
+    private String userId;
     private boolean suppressInput = false;
-    private final String viewCode;
-    private final String editCode;
+    private String viewCode;
+    private String editCode;
+    private String role;
     private Anchor hiddenDownloadLink;
     private VerticalLayout usersList;
     private static final ConcurrentHashMap<String, UI> activeUsers = new ConcurrentHashMap<>();
@@ -43,14 +50,23 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private CollaborativeEditService collaborativeEditService;
 
     public CollaborativeTextEditor() {
-        this.ui = UI.getCurrent();
+        setSizeFull(); 
+    }
 
+    @Override
+    public void setParameter(BeforeEvent event, String parameter) {
+        userId = helpers.extractData(parameter, "userId");
+        role = helpers.extractData(parameter, "role");
+        viewCode = helpers.extractData(parameter, "viewCode");
+        editCode = helpers.extractData(parameter, "editCode");
+        
+        this.ui = UI.getCurrent();
+        initializeEditorUi(); 
+    }
+
+
+    private void initializeEditorUi() {
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
-        String vc = (String) VaadinSession.getCurrent().getAttribute("viewCode");
-        String ec = (String) VaadinSession.getCurrent().getAttribute("editCode");
-        this.userId = (String) VaadinSession.getCurrent().getAttribute("userId");
-        this.viewCode = (vc == null || vc.isEmpty()) ? "N/A" : vc;
-        this.editCode = (ec == null || ec.isEmpty()) ? "N/A" : ec;
 
         // Register this user
         activeUsers.put(userId, ui);
@@ -219,10 +235,15 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @Override
     public void onServerMessage(String text) {
+        System.out.println("userId: " + userId);
         System.out.println("📩 Message received from server in UI: " + text);
         suppressInput = true;
         ui.access(() -> {
+<<<<<<< HEAD
             editor.setValue(text);
+=======
+            editor.setValue(text); // Won't trigger backend logic if suppression is on
+>>>>>>> 4fc5b01750de9371146a578b7cb082a63831a962
             suppressInput = false;
         });
     }
