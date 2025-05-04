@@ -30,13 +30,13 @@ fel FE ne store akher 10 operations (2 stacks) el howa kol el operation(position
 (check 7ewar ondisconnect: eb3aty user id to remove it from users hashmap)
 - Export (EL TEXT EL MAWGOOD NOW BEL DOCUMENT BREAKS W KEDA)
 
+### MESH BONUS
+- Cursor tracking: websocket le position el cursors beta3et el users
+
 ### Reconnection: 
 Allow users a period of 5 minutes to reconnect if they experience a network drop. Remote edits missed should be sent to the user on reconnection. Local changes done should be sent after reconnection. 
 - Operation Buffer fel Local, when you reconnect send operations and syn with remote CRDT
 
-
-### MESH BONUS
-- Cursor tracking: websocket le position el cursors beta3et el users
 
 ### Comments
 
