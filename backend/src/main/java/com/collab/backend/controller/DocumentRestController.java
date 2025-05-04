@@ -36,7 +36,7 @@ public class DocumentRestController {
     public String joinDocument(@PathVariable String documentID) {
         // The username is required for joining the document
         var response = documentService.joinDocument(documentID);
-        return "role:  " + response.get("role") +
-                ", userId: " + response.get("userId");
+        return "userId: " + response.get("userId") +
+                ", role: " + response.get("role");
     }
 }

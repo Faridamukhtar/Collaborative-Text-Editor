@@ -5,44 +5,37 @@ import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.PageTitle;
 import com.vaadin.flow.router.Route;
+import com.vaadin.flow.server.VaadinSession;
 
 @PageTitle("Editor")
-@Route("page-editor/{userId}/{role}/{viewCode}/{editCode}")
+@Route("/page-editor")
 public class TextView extends VerticalLayout {
 
-    private String content = ""; // Default content if no value is set
-    private String viewCode = "N/A"; // Default view code
-    private String editCode = "N/A"; // Default edit code
-    private String userId = "N/A"; // Default user ID
-    private String role = "N/A"; // Default role
-
-
-
-    public TextView(@PathVariable String userId, 
-                    @PathVariable String role, 
-                    @PathVariable String viewCode, 
-                    @PathVariable String editCode) {
-
-        // Set up basic layout
+    public TextView() {
         setSizeFull();
         setPadding(true);
         setSpacing(true);
 
-        // Assign the path parameters to the class variables
-        this.userId = userId;
-        this.viewCode = viewCode;
-        this.editCode = editCode;
-        this.role = role;
+        String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
+        String viewCode = (String) VaadinSession.getCurrent().getAttribute("viewCode");
+        String editCode = (String) VaadinSession.getCurrent().getAttribute("editCode");
+        String userId = (String) VaadinSession.getCurrent().getAttribute("userId");
+        String role = (String) VaadinSession.getCurrent().getAttribute("role");
+
+
+        if (content == null) content = "";
+        if (viewCode == null) viewCode = "N/A";
+        if (editCode == null) editCode = "N/A";
+        if (userId == null) userId = "N/A";
 
         // Show codes
         add(new Label("User ID: " + userId));
         add(new Label("View Code: " + viewCode));
         add(new Label("Edit Code: " + editCode));
-        add(new Label("Role: " + role));  // Display role
 
-        // Show document content in a text area
+        // Show document content
         TextArea textArea = new TextArea("Document Content");
-        textArea.setValue(content); // You could pass or retrieve content as needed
+        textArea.setValue(content);
         textArea.setWidthFull();
         textArea.setHeight("400px");
         add(textArea);

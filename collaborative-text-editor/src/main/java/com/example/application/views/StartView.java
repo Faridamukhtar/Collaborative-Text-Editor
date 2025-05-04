@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
+import javax.management.relation.Role;
+
 @PageTitle("Start Screen")
 @Route("")
 public class StartView extends VerticalLayout {
@@ -33,15 +35,12 @@ public class StartView extends VerticalLayout {
         newDocIcon.setWidth("60px");
         Button newDocBtn = new Button("New Doc.");
         newDocBtn.addClickListener(event -> {
-            String result = StartPageData.createNewDocument(""); 
+            String result = StartPageData.createNewDocument("");
             if (result.startsWith("userId:")) {
-                String userId = extractData(result, "userId");
-                String role = extractData(result, "role");
-                String viewCode = extractData(result, "viewCode");
-                String editCode = extractData(result, "editCode");
-                String navigateTo = String.format("page-editor/%s/%s/%s/%s", 
-                                                    userId, role, viewCode, editCode);
-                getUI().ifPresent(ui -> ui.navigate(navigateTo));
+                extractAndSet(result);
+                VaadinSession.getCurrent().setAttribute("importedText", "");
+                getUI().ifPresent(ui -> ui.navigate("/page-editor"));
+
             } else {
                 Notification.show("Failed to create document: " + result, 5000, Notification.Position.MIDDLE);
             }
@@ -64,18 +63,14 @@ public class StartView extends VerticalLayout {
         upload.addSucceededListener(event -> {
             try (InputStream inputStream = buffer.getInputStream()) {
                 String content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-        
+
                 String result = StartPageData.createNewDocument(content);
-        
+
                 if (result.startsWith("userId:")) {
-                    String userId = extractData(result, "userId");
-                    String role = extractData(result, "role");
-                    String viewCode = extractData(result, "viewCode");
-                    String editCode = extractData(result, "editCode");
-        
-                    String navigateTo = String.format("page-editor/%s/%s/%s/%s", userId, role, viewCode, editCode);        
+                    extractAndSet(result);
+
                     VaadinSession.getCurrent().setAttribute("importedText", content);
-                    getUI().ifPresent(ui -> ui.navigate(navigateTo));
+                    getUI().ifPresent(ui -> ui.navigate("/page-editor"));
                 } else {
                     Notification.show("Failed to create document: " + result, 5000, Notification.Position.MIDDLE);
                 }
@@ -83,7 +78,6 @@ public class StartView extends VerticalLayout {
                 Notification.show("Error reading file: " + e.getMessage(), 5000, Notification.Position.MIDDLE);
             }
         });
-        
 
         // === Join Session Section ===
         VerticalLayout joinLayout = new VerticalLayout();
@@ -99,23 +93,21 @@ public class StartView extends VerticalLayout {
             String code = sessionCode.getValue().trim();
             if (!code.isEmpty()) {
                 String response = StartPageData.joinDocument(code, "guestUser");
-                if (response.startsWith("role:")) {
+                if (response.startsWith("userId:")) {
                     String userId = extractData(response, "userId");
                     String role = extractData(response, "role");
-
-                    // Store the session code in the Vaadin session
-
-                    // Construct the URL with the extracted data
-                    String viewCode ="" , editCode="";
-                    if (role == "viewer")
+                    String viewCode = "", editCode = "";
+                    if ("viewer".equals(role))
                         viewCode = code;
-                    else 
+                    else
                         editCode = code;
-                        
-                        VaadinSession.getCurrent().setAttribute("importedText", "");
-                        
-                        String navigateTo = String.format("page-editor/%s/%s/%s/%s", userId, role, viewCode, editCode);
-                        getUI().ifPresent(ui -> ui.navigate(navigateTo));
+                    VaadinSession.getCurrent().setAttribute("userId", userId);
+                    VaadinSession.getCurrent().setAttribute("role", role);
+                    VaadinSession.getCurrent().setAttribute("viewCode", viewCode);
+                    VaadinSession.getCurrent().setAttribute("editCode", editCode);
+
+                    // Navigate to the page-editor view with query parameters
+                    getUI().ifPresent(ui -> ui.navigate("/page-editor"));
                 } else {
                     Notification.show("Join failed: " + response, 5000, Notification.Position.MIDDLE);
                 }
@@ -133,6 +125,7 @@ public class StartView extends VerticalLayout {
         mainLayout.setJustifyContentMode(JustifyContentMode.CENTER);
         add(mainLayout);
     }
+
     private String extractData(String result, String key) {
         // Assuming the result is in the format: "key: value"
         String[] parts = result.split(", ");
@@ -142,5 +135,16 @@ public class StartView extends VerticalLayout {
             }
         }
         return "";
+    }
+
+    private void extractAndSet(String result) {
+        String userId = extractData(result, "userId");
+        String role = extractData(result, "role");
+        String viewCode = extractData(result, "viewCode");
+        String editCode = extractData(result, "editCode");
+        VaadinSession.getCurrent().setAttribute("userId", userId);
+        VaadinSession.getCurrent().setAttribute("role", role);
+        VaadinSession.getCurrent().setAttribute("viewCode", viewCode);
+        VaadinSession.getCurrent().setAttribute("editCode", editCode);
     }
 }
