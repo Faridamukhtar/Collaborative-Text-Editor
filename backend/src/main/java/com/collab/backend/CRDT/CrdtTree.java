@@ -25,7 +25,7 @@ public class CrdtTree {
             int insertPos = computeInsertionIndexInVisibleList(parent, newNode);
             visibleCharacterIdsInOrder.add(insertPos, op.id);
         } else if (clientEditRequest.type == ClientEditRequest.Type.DELETE) {
-            CrdtOperation op = CrdtOperation.fromClientDelete(clientEditRequest);
+            CrdtOperation op = CrdtOperation.fromClientDelete(clientEditRequest, this.getVisibleIds());
             CrdtNode target = nodeMap.get(op.targetId);
             if (target != null && !target.isDeleted) {
                 target.isDeleted = true;

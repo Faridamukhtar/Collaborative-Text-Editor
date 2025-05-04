@@ -39,12 +39,13 @@ public class CrdtOperation {
     }
 
     public static CrdtOperation fromClientInsert(ClientEditRequest req, List<String> visibleIds) {
-        String id = req.targetId;
+        String targetId = req.userId + "-" + req.timestamp;
+        
         String parentId = (req.position <= 0 || visibleIds.isEmpty()) ? "root" : visibleIds.get(Math.min(req.position - 1, visibleIds.size() - 1));
 
         return insert(
             req.documentId,
-            id,
+            targetId,
             req.value,
             parentId,
             req.timestamp,
@@ -52,9 +53,14 @@ public class CrdtOperation {
         );
     }
 
-    public static CrdtOperation fromClientDelete(ClientEditRequest req) {
+    public static CrdtOperation fromClientDelete(ClientEditRequest req, List<String> visibleIds) {   
+        String targetId = "";
+        if (req.position >= 0 && req.position < visibleIds.size()) {
+            targetId = visibleIds.get(req.position);
+        }
+
         return delete(
-            req.targetId,
+            targetId,
             req.timestamp,
             req.userId,
             req.documentId
