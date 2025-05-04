@@ -45,9 +45,12 @@ public class CollaborativeTextEditor extends VerticalLayout {
     public CollaborativeTextEditor() {
         this.ui = UI.getCurrent();
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
-        this.viewCode = (String) VaadinSession.getCurrent().getAttribute("viewCode");
-        this.editCode = (String) VaadinSession.getCurrent().getAttribute("editCode");
+        String vc = (String) VaadinSession.getCurrent().getAttribute("viewCode");
+        String ec = (String) VaadinSession.getCurrent().getAttribute("editCode");
         this.userId = (String) VaadinSession.getCurrent().getAttribute("userId");
+        this.viewCode = (vc == null || vc.isEmpty()) ? "N/A" : vc;
+        this.editCode = (ec == null || ec.isEmpty()) ? "N/A" : ec;
+
     
         // Register this user
         activeUsers.put(userId, ui);
@@ -75,6 +78,11 @@ public class CollaborativeTextEditor extends VerticalLayout {
         editor.setWidthFull();
         editor.setHeight("100%");
         editor.setLabel("Edit text below - changes are shared with all users");
+
+
+        if (!viewCode.isEmpty() && editCode.isEmpty()) {
+            editor.setReadOnly(true); 
+        }  
     
         editor.addValueChangeListener(event -> {
             String updatedHtml = event.getValue();
