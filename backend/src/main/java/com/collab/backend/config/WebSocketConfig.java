@@ -1,8 +1,7 @@
 package com.collab.backend.config;
 
-import com.collab.backend.server.WebSocketServer;
+import com.collab.backend.websocket.CrdtWebSocketHandler;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -12,20 +11,14 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
 
-    private final WebSocketServer webSocketHandler;
+    private final CrdtWebSocketHandler handler;
 
-    @Autowired
-    public WebSocketConfig(WebSocketServer webSocketHandler) {
-        this.webSocketHandler = webSocketHandler;
+    public WebSocketConfig(CrdtWebSocketHandler handler) {
+        this.handler = handler;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry
-            .addHandler(webSocketHandler, "/collaborate")
-            .setAllowedOrigins("*"); // Allow connections from anywhere
-            
-        System.out.println("WebSocket handler registered at /collaborate");
-
+        registry.addHandler(handler, "/ws/crdt").setAllowedOrigins("*");
     }
 }
