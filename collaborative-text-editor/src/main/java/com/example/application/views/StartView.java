@@ -39,7 +39,7 @@ public class StartView extends VerticalLayout {
             if (result.startsWith("userId:")) {
                 extractAndSet(result);
                 VaadinSession.getCurrent().setAttribute("importedText", "");
-                getUI().ifPresent(ui -> ui.navigate("/page-editor"));
+                getUI().ifPresent(ui -> ui.navigate("/editor"));
 
             } else {
                 Notification.show("Failed to create document: " + result, 5000, Notification.Position.MIDDLE);
@@ -70,7 +70,7 @@ public class StartView extends VerticalLayout {
                     extractAndSet(result);
 
                     VaadinSession.getCurrent().setAttribute("importedText", content);
-                    getUI().ifPresent(ui -> ui.navigate("/page-editor"));
+                    getUI().ifPresent(ui -> ui.navigate("/editor"));
                 } else {
                     Notification.show("Failed to create document: " + result, 5000, Notification.Position.MIDDLE);
                 }
@@ -107,7 +107,7 @@ public class StartView extends VerticalLayout {
                     VaadinSession.getCurrent().setAttribute("editCode", editCode);
 
                     // Navigate to the page-editor view with query parameters
-                    getUI().ifPresent(ui -> ui.navigate("/page-editor"));
+                    getUI().ifPresent(ui -> ui.navigate("/editor"));
                 } else {
                     Notification.show("Join failed: " + response, 5000, Notification.Position.MIDDLE);
                 }
