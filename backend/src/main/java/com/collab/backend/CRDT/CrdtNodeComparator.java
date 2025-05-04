@@ -1,4 +1,4 @@
-package com.collab.backend.crdt;
+package com.collab.backend.CRDT;
 
 import java.util.Comparator;
 

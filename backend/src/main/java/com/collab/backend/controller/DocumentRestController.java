@@ -28,6 +28,7 @@ public class DocumentRestController {
 
         return "userId: " + response.get("userId") +
                 ", role: " + response.get("role") + 
+                ", documentId: " + response.get("documentId") +
                ", viewCode: " + codes.get("viewCode") +
                ", editCode: " + codes.get("editCode");
     }
@@ -37,6 +38,7 @@ public class DocumentRestController {
         // The username is required for joining the document
         var response = documentService.joinDocument(documentID);
         return "userId: " + response.get("userId") +
+                ", documentId: " + response.get("documentId") +
                 ", role: " + response.get("role");
     }
 }
