@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>CRDT Test Client</title>
+</head>
+<body>
+  <h2>🧪 CRDT WebSocket Test</h2>
+  <textarea id="log" rows="10" cols="80" readonly></textarea><br>
+
+  <h3>Insert</h3>
+  <input type="text" id="value" placeholder="Character (e.g. A)">
+  <input type="text" id="parentId" placeholder="Parent ID (e.g. root)">
+  <input type="text" id="userId" placeholder="User ID (e.g. u1)">
+  <button onclick="sendInsert()">Insert</button>
+
+  <h3>Delete</h3>
+  <input type="text" id="deleteId" placeholder="ID to delete">
+  <button onclick="sendDelete()">Delete</button>
+
+  <script>
+    const log = document.getElementById("log");
+    const ws = new WebSocket("ws://localhost:8081/ws/crdt");
+
+    ws.onopen = () => {
+      logMessage("✅ Connected to WebSocket");
+      console.log("WebSocket opened");
+    };
+
+    ws.onmessage = (event) => {
+      logMessage("📨 Server update: " + event.data);
+      console.log("Received update:", event.data);
+    };
+
+    ws.onerror = (err) => {
+      logMessage("❌ WebSocket error");
+      console.error("WebSocket error", err);
+    };
+
+    ws.onclose = () => {
+      logMessage("⚠️ WebSocket closed");
+      console.warn("WebSocket closed");
+    };
+
+    function sendInsert() {
+      const value = document.getElementById("value").value;
+      const parentId = document.getElementById("parentId").value || "root";
+      const userId = document.getElementById("userId").value || "tester";
+      const timestamp = Date.now();
+      const id = `${userId}:${timestamp}`;
+
+      const op = {
+        type: "INSERT",
+        id,
+        value,
+        parentId,
+        timestamp,
+        userId
+      };
+
+      ws.send(JSON.stringify(op));
+      logMessage("⬆️ Sent INSERT: " + JSON.stringify(op));
+      console.log("Sent INSERT", op);
+    }
+
+    function sendDelete() {
+      const targetId = document.getElementById("deleteId").value;
+      const timestamp = Date.now();
+      const userId = "tester";
+
+      const op = {
+        type: "DELETE",
+        targetId,
+        timestamp,
+        userId
+      };
+
+      ws.send(JSON.stringify(op));
+      logMessage("⬆️ Sent DELETE: " + JSON.stringify(op));
+      console.log("Sent DELETE", op);
+    }
+
+    function logMessage(msg) {
+      log.value += msg + "\\n";
+      log.scrollTop = log.scrollHeight;
+    }
+  </script>
+</body>
+</html>
