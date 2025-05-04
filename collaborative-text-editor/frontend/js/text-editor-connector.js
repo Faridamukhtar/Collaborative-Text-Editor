@@ -32,20 +32,5 @@ window.initEditorConnector = function (element, userId) {
         lastValue = newValue;
     });
 
-    window.applyRemoteChange = function (type, character, position, sourceUserId) {
-        if (sourceUserId === userId) return;
-
-        let currentValue = textarea.value;
-        if (type === "insert") {
-            const newValue = currentValue.slice(0, position) + character + currentValue.slice(position);
-            textarea.value = newValue;
-        } else if (type === "delete") {
-            const newValue = currentValue.slice(0, position) + currentValue.slice(position + 1);
-            textarea.value = newValue;
-        } else if (type === "reset") {
-            textarea.value = "";
-        }
-    };
-
     console.log("✅ Text editor connector initialized for user:", userId);
 };

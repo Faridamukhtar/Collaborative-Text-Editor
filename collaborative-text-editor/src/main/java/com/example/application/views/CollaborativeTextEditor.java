@@ -22,6 +22,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private final UI ui;
     private final TextArea editor;
     private final String userId;
+    private boolean suppressInput = false;
 
     @Autowired
     private CollaborativeEditService collaborativeEditService;
@@ -65,18 +66,21 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
+        if (suppressInput) return;
         ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId);
         collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
+        if (suppressInput) return;
         ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId);
         collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
+        if (suppressInput) return;
         for (int i = 0; i < text.length(); i++) {
             String ch = String.valueOf(text.charAt(i));
             onCharacterInserted(ch, position + i);
@@ -85,6 +89,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterBatchDeleted(int startPosition, int count) {
+        if (suppressInput) return;
         for (int i = 0; i < count; i++) {
             onCharacterDeleted(startPosition);
         }
@@ -92,10 +97,12 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @Override
     public void onServerMessage(String text) {
-        ui.access(() -> editor.setValue(text));
+        System.out.println("📩 Message received from server in UI: " + text);
+        suppressInput = true;
+        ui.access(() -> {
+            editor.setValue(text); // Won't trigger backend logic if suppression is on
+            suppressInput = false; // Reset after value is set
+        });
     }
 
-    public void updateTextArea(String text) {
-        editor.setValue(text);
-    }
 }
