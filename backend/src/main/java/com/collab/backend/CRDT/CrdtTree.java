@@ -1,4 +1,4 @@
-package com.collab.backend.CRDT;
+package com.collab.backend.crdt;
 
 import java.util.*;
 
@@ -115,12 +115,4 @@ public class CrdtTree {
     public CrdtNode getNode(String id) {
         return nodeMap.get(id);
     }
-
-    public void clear() {
-        root.children.clear();                      
-        nodeMap.clear();                           
-        visibleCharacterIdsInOrder.clear();        
-        nodeMap.put("root", root);                 
-    }
-    
 }

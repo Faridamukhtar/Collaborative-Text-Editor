@@ -8,6 +8,7 @@ import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -35,11 +36,11 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private TextArea editor;
     private String userId;
     private boolean suppressInput = false;
-    private String documentId;
     private String viewCode;
     private String editCode;
     private String role;
     private Anchor hiddenDownloadLink;
+    private VerticalLayout usersList;
     private static final ConcurrentHashMap<String, UI> activeUsers = new ConcurrentHashMap<>();
 
     @Autowired
@@ -53,7 +54,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     public void setParameter(BeforeEvent event, String parameter) {
         userId = helpers.extractData(parameter, "userId");
         role = helpers.extractData(parameter, "role");
-        documentId = helpers.extractData(parameter, "documentId");
         viewCode = helpers.extractData(parameter, "viewCode");
         editCode = helpers.extractData(parameter, "editCode");
         
@@ -63,14 +63,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
 
     private void initializeEditorUi() {
-        collaborativeEditService.connectWebSocket(documentId);
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
 
         // Register this user
         activeUsers.put(userId, ui);
-    
-        // Clean up on UI detach
-        ui.addDetachListener(event -> activeUsers.remove(userId));
     
         // Set up the layout
         setSizeFull();
@@ -108,7 +104,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         editorLayout.setSpacing(false);
         editorLayout.setFlexGrow(1, editor);
     
-       hiddenDownloadLink = new Anchor();
+        hiddenDownloadLink = new Anchor();
         hiddenDownloadLink.setId("hiddenDownloadLink");
         hiddenDownloadLink.getStyle().set("display", "none");
         hiddenDownloadLink.getElement().setAttribute("download", true);
@@ -118,10 +114,20 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         exportButton.addClickListener(e -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
 
         CollaborativeEditService.setUiListener(this);
-          
-        Div connectionStatus = new Div();
-        connectionStatus.setText("Connected Users: " + activeUsers.size());
-        connectionStatus.getStyle().set("color", "black");
+        
+        // Users list setup
+        Div usersTitle = new Div(new H3("Active Users"));
+        usersTitle.getStyle().set("margin-bottom", "0.5rem");
+
+        usersList = new VerticalLayout();
+        usersList.setPadding(false);
+        usersList.setSpacing(false);
+        usersList.getStyle()
+            .set("max-height", "200px")
+            .set("overflow-y", "auto")
+            .set("margin-bottom", "1rem");
+
+        updateUsersList();
     
         VerticalLayout sidebarLayout = new VerticalLayout();
         sidebarLayout.setWidth("300px");
@@ -131,22 +137,62 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         sidebarLayout.addClassNames("sidebar");
         sidebarLayout.add(
             SidebarUtil.createItem("Owner", userId),
-            SidebarUtil.createBadgeItem("Document ID", documentId),
             SidebarUtil.createBadgeItem("View Code", viewCode),
             SidebarUtil.createBadgeItem("Edit Code", editCode),
+            usersTitle,
+            usersList,
             hiddenDownloadLink,
-            exportButton,
-            connectionStatus
+            exportButton
         );
     
         HorizontalLayout mainLayout = new HorizontalLayout(editorLayout, sidebarLayout);
         mainLayout.setSizeFull();
-        mainLayout.setFlexGrow(3, editorLayout);   // Give editor 75%
-        mainLayout.setFlexGrow(1, sidebarLayout);  // Sidebar 25%
+        mainLayout.setFlexGrow(3, editorLayout);
+        mainLayout.setFlexGrow(1, sidebarLayout);
     
         add(mainLayout);
     
-        initializeConnector(); 
+        initializeConnector();
+
+        // Notify all users about the new user
+        notifyAllUsersToUpdateLists();
+
+        // Clean up on UI detach
+        ui.addDetachListener(event -> {
+            activeUsers.remove(userId);
+            notifyAllUsersToUpdateLists();
+        });
+    }
+
+    private Div createUserItem(String userId, boolean isCurrentUser) {
+        Div userItem = new Div();
+        userItem.setText(userId + (isCurrentUser ? " (You)" : ""));
+        userItem.getStyle()
+            .set("padding", "0.5rem")
+            .set("margin", "0.25rem 0")
+            .set("border-radius", "4px")
+            .set("background-color", isCurrentUser ? "#e3f2fd" : "#f5f5f5");
+        return userItem;
+    }
+
+    private void updateUsersList() {
+        ui.access(() -> {
+            usersList.removeAll();
+            activeUsers.forEach((id, ui) -> {
+                usersList.add(createUserItem(id, id.equals(this.userId)));
+            });
+        });
+    }
+
+    private void notifyAllUsersToUpdateLists() {
+        activeUsers.values().forEach(u -> {
+            u.access(() -> {
+                if (u.getSession() != null) {
+                    CollaborativeTextEditor editor = (CollaborativeTextEditor) u.getCurrentView();
+                    editor.updateUsersList();
+                }
+            });
+        });
     }
     
     private void initializeConnector() {
@@ -156,19 +202,20 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
         if (suppressInput) return;
-        ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId , documentId);
+        ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId);
         collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
         if (suppressInput) return;
-        ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId , documentId);
+        ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId);
         collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
+        System.out.println("onCharacterBatchInserted: " + text + " at position: " + position);
         if (suppressInput) return;
         for (int i = 0; i < text.length(); i++) {
             String ch = String.valueOf(text.charAt(i));
@@ -190,7 +237,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         System.out.println("📩 Message received from server in UI: " + text);
         suppressInput = true;
         ui.access(() -> {
-            editor.setValue(text); // Won't trigger backend logic if suppression is on
+            editor.setValue(text);
             suppressInput = false;
         });
     }
