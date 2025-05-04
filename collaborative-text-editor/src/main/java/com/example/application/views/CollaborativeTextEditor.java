@@ -2,22 +2,18 @@ package com.example.application.views;
 
 import com.example.application.connections.CRDT.*;
 import com.vaadin.flow.component.ClientCallable;
-import com.vaadin.flow.component.Text;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.html.Anchor;
-import com.vaadin.flow.component.html.DescriptionList;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
-import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
 import com.vaadin.flow.router.Route;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import com.vaadin.flow.server.Command;
 import com.vaadin.flow.server.StreamResource;
 import com.vaadin.flow.server.VaadinSession;
 
@@ -26,7 +22,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ConcurrentHashMap;
 import com.example.application.views.components.SidebarUtil;
 import com.example.application.views.components.helpers;
-import com.vaadin.flow.component.html.Section;
 import com.vaadin.flow.component.icon.VaadinIcon;
 
 
@@ -40,6 +35,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private final String viewCode;
     private final String editCode;
     private Anchor hiddenDownloadLink;
+    private static final ConcurrentHashMap<String, UI> activeUsers = new ConcurrentHashMap<>();
 
     @Autowired
     private CollaborativeEditService collaborativeEditService;
@@ -54,7 +50,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         this.viewCode = (vc == null || vc.isEmpty()) ? "N/A" : vc;
         this.editCode = (ec == null || ec.isEmpty()) ? "N/A" : ec;
 
-    
         // Register this user
         activeUsers.put(userId, ui);
     
@@ -124,7 +119,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             SidebarUtil.createBadgeItem("Edit Code", editCode),
             hiddenDownloadLink,
             exportButton,
-            resetButton,
             connectionStatus
         );
     
