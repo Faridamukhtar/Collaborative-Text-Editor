@@ -95,6 +95,7 @@ public class StartView extends VerticalLayout {
                 String response = StartPageData.joinDocument(code, "guestUser");
                 if (response.startsWith("userId:")) {
                     String userId = helpers.extractData(response, "userId");
+                    String documentId 
                     String role = helpers.extractData(response, "role");
                     String viewCode = "Hidden", editCode = "Hidden";
                     if ("viewer".equals(role))

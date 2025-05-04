@@ -35,6 +35,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private TextArea editor;
     private String userId;
     private boolean suppressInput = false;
+    private String documentId;
     private String viewCode;
     private String editCode;
     private String role;
@@ -52,6 +53,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     public void setParameter(BeforeEvent event, String parameter) {
         userId = helpers.extractData(parameter, "userId");
         role = helpers.extractData(parameter, "role");
+        documentId = helpers.extractData(parameter, "documentId");
         viewCode = helpers.extractData(parameter, "viewCode");
         editCode = helpers.extractData(parameter, "editCode");
         
