@@ -25,7 +25,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
             .addHandler(webSocketHandler, "/collaborate")
             .setAllowedOrigins("*"); // Allow connections from anywhere
             
-        System.out.println("✅ WebSocket handler registered at /collaborate");
+        System.out.println("WebSocket handler registered at /collaborate");
 
     }
 }
