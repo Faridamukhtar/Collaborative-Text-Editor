@@ -8,11 +8,8 @@ import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
-<<<<<<< HEAD
 import com.vaadin.flow.component.html.H3;
-=======
 import com.vaadin.flow.component.icon.VaadinIcon;
->>>>>>> 4fc5b01750de9371146a578b7cb082a63831a962
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -218,6 +215,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
+        System.out.println("onCharacterBatchInserted: " + text + " at position: " + position);
         if (suppressInput) return;
         for (int i = 0; i < text.length(); i++) {
             String ch = String.valueOf(text.charAt(i));
@@ -239,11 +237,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         System.out.println("📩 Message received from server in UI: " + text);
         suppressInput = true;
         ui.access(() -> {
-<<<<<<< HEAD
             editor.setValue(text);
-=======
-            editor.setValue(text); // Won't trigger backend logic if suppression is on
->>>>>>> 4fc5b01750de9371146a578b7cb082a63831a962
             suppressInput = false;
         });
     }

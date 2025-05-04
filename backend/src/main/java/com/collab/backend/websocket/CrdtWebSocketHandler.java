@@ -1,6 +1,6 @@
 package com.collab.backend.websocket;
 
-import com.collab.backend.CRDT.*;
+import com.collab.backend.crdt.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
@@ -71,8 +71,10 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         String updatedText = objectMapper.writeValueAsString(crdtTree.getText());
 
         for (WebSocketSession s : sessions) {
-            System.out.println("Sending message to session: " + s.getId());
-            s.sendMessage(new TextMessage(updatedText));
+            if (!s.getId().equals(session.getId())) { 
+                System.out.println("Forwarding to session " + s.getId());
+                s.sendMessage(new TextMessage(updatedText));
+            }
         }
     }
 } 
