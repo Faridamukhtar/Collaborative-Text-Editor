@@ -2,6 +2,8 @@ package com.collab.backend.CRDT;
 
 import java.util.*;
 
+import com.collab.backend.websocket.ClientEditRequest;
+
 public class CrdtTree {
     private final CrdtNode root = new CrdtNode("root", "", null, 0, "system");
     private final Map<String, CrdtNode> nodeMap = new HashMap<>();
@@ -11,8 +13,9 @@ public class CrdtTree {
         nodeMap.put("root", root);
     }
 
-    public void apply(CrdtOperation op) {
-        if (op.type == CrdtOperation.Type.INSERT) {
+    public void apply(ClientEditRequest clientEditRequest) {
+        if (clientEditRequest.type == ClientEditRequest.Type.INSERT) {
+            CrdtOperation op = CrdtOperation.fromClientInsert(clientEditRequest, this.getVisibleIds());
             CrdtNode newNode = new CrdtNode(op.id, op.value, op.parentId, op.timestamp, op.userId);
             CrdtNode parent = nodeMap.getOrDefault(op.parentId, root);
     
@@ -21,7 +24,8 @@ public class CrdtTree {
     
             int insertPos = computeInsertionIndexInVisibleList(parent, newNode);
             visibleCharacterIdsInOrder.add(insertPos, op.id);
-        } else if (op.type == CrdtOperation.Type.DELETE) {
+        } else if (clientEditRequest.type == ClientEditRequest.Type.DELETE) {
+            CrdtOperation op = CrdtOperation.fromClientDelete(clientEditRequest);
             CrdtNode target = nodeMap.get(op.targetId);
             if (target != null && !target.isDeleted) {
                 target.isDeleted = true;
