@@ -2,12 +2,10 @@ package com.example.application.connections.CRDT;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.websocket.*;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-
 import java.io.IOException;
 import java.net.URI;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @ClientEndpoint
@@ -15,26 +13,20 @@ public class CollaborativeEditService {
 
     private Session session;
     private final ObjectMapper mapper = new ObjectMapper();
-
-    public CollaborativeEditService() {
-        // Default constructor
-    }
-
-    private static CollaborativeEditUiListener uiListener;
+    private static final AtomicReference<CollaborativeEditUiListener> uiListener = new AtomicReference<>();
 
     public static void setUiListener(CollaborativeEditUiListener listener) {
-        uiListener = listener;
+        uiListener.set(listener);
     }
 
-
-    @EventListener(ApplicationReadyEvent.class)
-    public void connectWebSocket() {
+    public void connectWebSocket(String documentId) {
         try {
+            String wsUrl = String.format("ws://localhost:8081/crdt/%s", documentId);
             WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-            container.connectToServer(this, new URI("ws://localhost:8081/ws/crdt"));
-            System.out.println("✅ WebSocket connection initialized after app start");
+            container.connectToServer(this, new URI(wsUrl));
+            System.out.println("✅ WebSocket connection initialized to: " + wsUrl);
         } catch (Exception e) {
-            throw new RuntimeException("WebSocket connection failed", e);
+            throw new RuntimeException("❌ WebSocket connection failed", e);
         }
     }
 
@@ -47,21 +39,35 @@ public class CollaborativeEditService {
     @OnMessage
     public void onMessage(String message) {
         System.out.println("📩 Message received from server: " + message);
-        if (uiListener != null) {
-            System.out.println("📩 Notifying UI listener about message");
-            uiListener.onServerMessage(message);
+        CollaborativeEditUiListener listener = uiListener.get();
+        if (listener != null) {
+            listener.onServerMessage(message);
         }
-
     }
 
     @OnError
     public void onError(Session session, Throwable throwable) {
-        System.err.println("❌ WebSocket Error: " + throwable.getMessage());
+        System.err.println("WebSocket Error: " + throwable.getMessage());
     }
 
     @OnClose
     public void onClose(Session session, CloseReason reason) {
-        System.out.println("⚠️ WebSocket closed: " + reason);
+        System.out.println("WebSocket closed: " + reason);
+        // If the WebSocket was closed due to idle timeout or other non-fatal reasons, reconnect
+        if (reason.getCloseCode() == CloseReason.CloseCodes.NORMAL_CLOSURE) {
+            System.out.println("Attempting to reconnect...");
+            reconnect(session.getRequestURI().getPath().split("/")[2]);
+        }
+    }
+
+    private void reconnect(String documentId) {
+        try {
+            // Wait for 5 seconds before reconnecting
+            Thread.sleep(5000);
+            connectWebSocket(documentId); // Attempt to reconnect
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
     public void sendEditRequest(ClientEditRequest req) {
@@ -78,24 +84,24 @@ public class CollaborativeEditService {
         }
     }
 
-    public static ClientEditRequest createInsertRequest(String value, int position, String userId) {
+    public static ClientEditRequest createInsertRequest(String value, int position, String userId, String documentId) {
         ClientEditRequest req = new ClientEditRequest();
         req.type = ClientEditRequest.Type.INSERT;
         req.value = value;
         req.position = position;
         req.timestamp = System.currentTimeMillis();
         req.userId = userId;
-        req.documentId = "default";
+        req.documentId = documentId;
         return req;
     }
 
-    public static ClientEditRequest createDeleteRequest(int position, String userId) {
+    public static ClientEditRequest createDeleteRequest(int position, String userId, String documentId) {
         ClientEditRequest req = new ClientEditRequest();
         req.type = ClientEditRequest.Type.DELETE;
         req.position = position;
         req.timestamp = System.currentTimeMillis();
         req.userId = userId;
-        req.documentId = "default";
+        req.documentId = documentId;
         return req;
     }
 }
