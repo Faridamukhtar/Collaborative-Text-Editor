@@ -1,5 +1,8 @@
 package com.collab.backend.CRDT;
 
+import java.util.List;
+import com.collab.backend.websocket.ClientEditRequest;
+
 public class CrdtOperation {
     public enum Type { INSERT, DELETE }
 
@@ -34,4 +37,27 @@ public class CrdtOperation {
         op.userId = userId;
         return op;
     }
-}
+
+    public static CrdtOperation fromClientInsert(ClientEditRequest req, List<String> visibleIds) {
+        String id = req.targetId;
+        String parentId = (req.position <= 0 || visibleIds.isEmpty()) ? "root" : visibleIds.get(Math.min(req.position - 1, visibleIds.size() - 1));
+
+        return insert(
+            req.documentId,
+            id,
+            req.value,
+            parentId,
+            req.timestamp,
+            req.userId
+        );
+    }
+
+    public static CrdtOperation fromClientDelete(ClientEditRequest req) {
+        return delete(
+            req.targetId,
+            req.timestamp,
+            req.userId,
+            req.documentId
+        );
+    }
+} 

@@ -28,13 +28,40 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessions.remove(session);
     }
+    // @Override
+    // protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
+    //     JsonNode root = objectMapper.readTree(message.getPayload());
+    //     ClientEditRequest req = objectMapper.treeToValue(root, ClientEditRequest.class);
 
+    //     CrdtTree tree = documentTrees.get(req.documentId);
+    //     CrdtOperation op;
+
+    //     if ("INSERT".equalsIgnoreCase(req.type)) {
+    //         op = CrdtOperation.fromClientInsert(req, tree.getVisibleIds());
+    //     } else if ("DELETE".equalsIgnoreCase(req.type)) {
+    //         op = CrdtOperation.fromClientDelete(req);
+    //     } else {
+    //         session.sendMessage(new TextMessage("Unsupported operation type"));
+    //         return;
+    //     }
+
+    //     tree.apply(op);
+
+    //     String text = tree.getText();
+    //     String json = objectMapper.writeValueAsString(text);
+
+    //     for (WebSocketSession s : documentSessions.get(req.documentId)) {
+    //         if (s.isOpen() && s != session) {
+    //             s.sendMessage(new TextMessage(json));
+    //         }
+    //     }
+    // }
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
         String payload = message.getPayload();
 
-        CrdtOperation op = objectMapper.readValue(payload, CrdtOperation.class);
-        crdtTree.apply(op);
+        ClientEditRequest clientEditRequest = objectMapper.readValue(payload, ClientEditRequest.class);
+        crdtTree.apply(clientEditRequest);
 
         String updatedText = objectMapper.writeValueAsString(crdtTree.getText());
 

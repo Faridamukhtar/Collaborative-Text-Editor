@@ -9,12 +9,15 @@
 
   <h3>Insert</h3>
   <input type="text" id="value" placeholder="Character (e.g. A)">
-  <input type="text" id="parentId" placeholder="Parent ID (e.g. root)">
+  <input type="number" id="position" placeholder="Position (e.g. 0)">
   <input type="text" id="userId" placeholder="User ID (e.g. u1)">
+  <input type="text" id="documentId" placeholder="Document ID" value="shared-doc">
   <button onclick="sendInsert()">Insert</button>
 
   <h3>Delete</h3>
-  <input type="text" id="deleteId" placeholder="ID to delete">
+  <input type="text" id="deleteId" placeholder="Target ID to delete">
+  <input type="text" id="userIdDelete" placeholder="User ID (e.g. u1)">
+  <input type="text" id="documentIdDelete" placeholder="Document ID" value="shared-doc">
   <button onclick="sendDelete()">Delete</button>
 
   <script>
@@ -23,12 +26,10 @@
 
     ws.onopen = () => {
       logMessage("✅ Connected to WebSocket");
-      console.log("WebSocket opened");
     };
 
     ws.onmessage = (event) => {
       logMessage("📨 Server update: " + event.data);
-      console.log("Received update:", event.data);
     };
 
     ws.onerror = (err) => {
@@ -38,45 +39,43 @@
 
     ws.onclose = () => {
       logMessage("⚠️ WebSocket closed");
-      console.warn("WebSocket closed");
     };
 
     function sendInsert() {
       const value = document.getElementById("value").value;
-      const parentId = document.getElementById("parentId").value || "root";
+      const position = parseInt(document.getElementById("position").value);
       const userId = document.getElementById("userId").value || "tester";
+      const documentId = document.getElementById("documentId").value;
       const timestamp = Date.now();
       const id = `${userId}:${timestamp}`;
 
-      const op = {
+      const req = {
         type: "INSERT",
-        id,
-        value,
-        parentId,
-        timestamp,
-        userId
+        targetId: id,
+        value: value,
+        position: position,
+        userId: userId,
+        documentId: documentId
       };
 
-      ws.send(JSON.stringify(op));
-      logMessage("⬆️ Sent INSERT: " + JSON.stringify(op));
-      console.log("Sent INSERT", op);
+      ws.send(JSON.stringify(req));
+      logMessage("⬆️ Sent INSERT: " + JSON.stringify(req));
     }
 
     function sendDelete() {
       const targetId = document.getElementById("deleteId").value;
-      const timestamp = Date.now();
-      const userId = "tester";
+      const userId = document.getElementById("userIdDelete").value || "tester";
+      const documentId = document.getElementById("documentIdDelete").value;
 
-      const op = {
+      const req = {
         type: "DELETE",
-        targetId,
-        timestamp,
-        userId
+        targetId: targetId,
+        userId: userId,
+        documentId: documentId
       };
 
-      ws.send(JSON.stringify(op));
-      logMessage("⬆️ Sent DELETE: " + JSON.stringify(op));
-      console.log("Sent DELETE", op);
+      ws.send(JSON.stringify(req));
+      logMessage("⬆️ Sent DELETE: " + JSON.stringify(req));
     }
 
     function logMessage(msg) {
