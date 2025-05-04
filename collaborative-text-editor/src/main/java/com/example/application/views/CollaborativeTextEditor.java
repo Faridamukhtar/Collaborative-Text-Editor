@@ -130,6 +130,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         sidebarLayout.addClassNames("sidebar");
         sidebarLayout.add(
             SidebarUtil.createItem("Owner", userId),
+            SidebarUtil.createBadgeItem("Document ID", documentId),
             SidebarUtil.createBadgeItem("View Code", viewCode),
             SidebarUtil.createBadgeItem("Edit Code", editCode),
             hiddenDownloadLink,
