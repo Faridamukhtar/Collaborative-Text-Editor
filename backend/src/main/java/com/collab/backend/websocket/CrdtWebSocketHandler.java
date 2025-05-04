@@ -32,20 +32,33 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        System.out.println("WebSocket connection closed: " + session.getId());
-        // Find the document ID associated with the session (you may need to store this in session attributes)
-        String documentId = getDocumentIdFromSession(session);
-        if (documentId != null) {
-            Set<WebSocketSession> docSessions = documentSessions.get(documentId);
-            if (docSessions != null) {
-                docSessions.remove(session);
-                if (docSessions.isEmpty()) {
-                    documentSessions.remove(documentId);  // Clean up if no sessions are left for this document
-                }
-            }
-        }
+        sessions.remove(session);
     }
+    // @Override
+    // protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
+    //     JsonNode root = objectMapper.readTree(message.getPayload());
+    //     ClientEditRequest req = objectMapper.treeToValue(root, ClientEditRequest.class);
 
+    //     CrdtTree tree = documentTrees.get(req.documentId);
+    //     CrdtOperation op;
+
+    //     if ("INSERT".equalsIgnoreCase(req.type)) {
+    //         op = CrdtOperation.fromClientInsert(req, tree.getVisibleIds());
+    //     } else if ("DELETE".equalsIgnoreCase(req.type)) {
+    //         op = CrdtOperation.fromClientDelete(req);
+    //     } else {
+    //         session.sendMessage(new TextMessage("Unsupported operation type"));
+    //         return;
+    //     }
+
+    //     tree.apply(op);
+
+    //     String text = tree.getText();
+    //     String json = objectMapper.writeValueAsString(text);
+
+    //     for (WebSocketSession s : documentSessions.get(req.documentId)) {
+    //         if (s.isOpen() && s != session) {
+    //             s.sendMessage(new TextMessage(json));
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
         ClientEditRequest clientEditRequest = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
@@ -64,14 +77,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         String updatedText = objectMapper.writeValueAsString(tree.getText());
         for (WebSocketSession s : documentSessions.get(docId)) {
             System.out.println("Sending message to session: " + s.getId());
-            System.out.println(updatedText);
             s.sendMessage(new TextMessage(updatedText));
         }
     }
-
-    // Helper method to retrieve the document ID from the session (if stored during the connection)
-    private String getDocumentIdFromSession(WebSocketSession session) {
-        // You can store the documentId as session attributes during connection establishment
-        return (String) session.getAttributes().get("documentId");
-    }
-}
+} 

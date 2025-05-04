@@ -63,7 +63,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
 
     private void initializeEditorUi() {
-        collaborativeEditService.connectWebSocket(documentId);
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
 
         // Register this user
@@ -156,14 +155,14 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
         if (suppressInput) return;
-        ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId , documentId);
+        ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId);
         collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
         if (suppressInput) return;
-        ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId , documentId);
+        ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId);
         collaborativeEditService.sendEditRequest(req);
     }
 
