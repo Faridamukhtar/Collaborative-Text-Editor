@@ -21,11 +21,13 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        System.out.println("New WebSocket connection established: " + session.getId());
         sessions.add(session);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        System.out.println("WebSocket connection closed: " + session.getId() + " with status: " + status);
         sessions.remove(session);
     }
     // @Override
@@ -69,10 +71,8 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         String updatedText = objectMapper.writeValueAsString(crdtTree.getText());
 
         for (WebSocketSession s : sessions) {
-            if (s.isOpen()) {
-                System.out.println("Sending message to session: " + s.getId());
-                s.sendMessage(new TextMessage(updatedText));
-            }
+            System.out.println("Sending message to session: " + s.getId());
+            s.sendMessage(new TextMessage(updatedText));
         }
     }
 } 

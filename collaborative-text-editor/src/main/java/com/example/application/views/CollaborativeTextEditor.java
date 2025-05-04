@@ -169,6 +169,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @Override
     public void onServerMessage(String text) {
+        System.out.println("userId: " + userId);
         System.out.println("📩 Message received from server in UI: " + text);
         suppressInput = true;
         ui.access(() -> {

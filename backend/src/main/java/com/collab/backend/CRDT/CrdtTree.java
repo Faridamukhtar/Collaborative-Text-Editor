@@ -18,11 +18,11 @@ public class CrdtTree {
             CrdtOperation op = CrdtOperation.fromClientInsert(clientEditRequest, this.getVisibleIds());
             CrdtNode newNode = new CrdtNode(op.id, op.value, op.parentId, op.timestamp, op.userId);
             CrdtNode parent = nodeMap.getOrDefault(op.parentId, root);
-    
+
             parent.children.add(newNode);
             nodeMap.put(op.id, newNode);
-    
-            int insertPos = computeInsertionIndexInVisibleList(parent, newNode);
+
+            int insertPos = findCorrectInsertionPosition(op);
             visibleCharacterIdsInOrder.add(insertPos, op.id);
         } else if (clientEditRequest.type == ClientEditRequest.Type.DELETE) {
             CrdtOperation op = CrdtOperation.fromClientDelete(clientEditRequest, this.getVisibleIds());
@@ -34,32 +34,45 @@ public class CrdtTree {
         }
     }
 
-    private int computeInsertionIndexInVisibleList(CrdtNode parent, CrdtNode newNode) {
-        // Step 1: find all descendants of parent in visible list (DFS subtree range)
-        Set<String> subtree = new HashSet<>();
-        collectVisibleSubtreeIds(parent, subtree);
-    
-        // Step 2: scan visibleCharacterIdsInOrder for the last node in the subtree
-        int lastSubtreeIndex = -1;
+    private int findCorrectInsertionPosition(CrdtOperation op) {
+        if (visibleCharacterIdsInOrder.isEmpty()) return 0;
+
+        if ("root".equals(op.parentId)) {
+            for (int i = visibleCharacterIdsInOrder.size() - 1; i >= 0; i--) {
+                CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(i));
+                if ("root".equals(node.parentId)) {
+                    if (compare(op, node) > 0) {
+                        return i + 1;
+                    }
+                }
+            }
+            return 0;
+        }
+
         for (int i = 0; i < visibleCharacterIdsInOrder.size(); i++) {
-            if (subtree.contains(visibleCharacterIdsInOrder.get(i))) {
-                lastSubtreeIndex = i;
+            CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(i));
+            if (op.parentId.equals(node.parentId)) {
+                if (compare(op, node) < 0) {
+                    return i;
+                }
             }
         }
-    
-        // Insert after last known node in the parent subtree
-        return (lastSubtreeIndex == -1) ? 0 : lastSubtreeIndex + 1;
+
+        for (int i = visibleCharacterIdsInOrder.size() - 1; i >= 0; i--) {
+            CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(i));
+            if (op.parentId.equals(node.parentId)) {
+                return i + 1;
+            }
+        }
+
+        return visibleCharacterIdsInOrder.size();
     }
 
-    private void collectVisibleSubtreeIds(CrdtNode node, Set<String> result) {
-        for (CrdtNode child : node.children) {
-            if (!child.isDeleted) {
-                result.add(child.id);
-            }
-            collectVisibleSubtreeIds(child, result);
-        }
-    }    
-    
+    private int compare(CrdtOperation o1, CrdtNode o2) {
+        int timeDiff = Long.compare(o1.timestamp, o2.timestamp);
+        return (timeDiff != 0) ? timeDiff : o1.userId.compareTo(o2.userId);
+    }
+
     public void insert(String value, int pos, String userId, long timestamp) {
         String newId = userId + ":" + timestamp;
         String parentId = (pos == 0) ? "root" : visibleCharacterIdsInOrder.get(pos - 1);
@@ -91,7 +104,8 @@ public class CrdtTree {
         }
         List<CrdtNode> ordered = new ArrayList<>(node.children);
         ordered.sort(new CrdtNodeComparator());
-        for (CrdtNode child : ordered) dfs(child, sb);
+        for (CrdtNode child : ordered)
+            dfs(child, sb);
     }
 
     public List<String> getVisibleIds() {
