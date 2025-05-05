@@ -95,6 +95,7 @@ public class StartView extends VerticalLayout {
                 String response = StartPageData.joinDocument(code, "guestUser");
                 if (response.startsWith("userId:")) {
                     String userId = helpers.extractData(response, "userId");
+                    String documentId = helpers.extractData(response, "documentId");
                     String role = helpers.extractData(response, "role");
                     String viewCode = helpers.extractData(response, "viewCode");
 
@@ -104,6 +105,7 @@ public class StartView extends VerticalLayout {
                     else
                         editCode = code;
                     String params = "userId: " + userId +
+                        ", documentId: " + documentId +
                             ", role: " + role + 
                         ", viewCode: " + viewCode +
                         ", editCode: " + editCode;
