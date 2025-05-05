@@ -97,6 +97,34 @@ public class CollaborativeEditService {
         return req;
     }
 
+
+    public static ClientEditRequest createAddCommentRequest(String documentId, String userId, String commentId, int position, int endPosition, String value) {
+        ClientEditRequest req = new ClientEditRequest();
+        req.type = ClientEditRequest.Type.ADD_COMMENT;
+        req.userId = userId;
+        req.position = position;
+        req.value = value;
+        req.endPosition = endPosition;
+        req.commentId = commentId;
+        req.timestamp = System.currentTimeMillis();
+        req.documentId = documentId;
+        return req;
+    }
+
+    public static ClientEditRequest createDeleteCommentRequest(String documentId, String userId, String commentId) {
+        ClientEditRequest req = new ClientEditRequest();
+        req.type = ClientEditRequest.Type.DELETE_COMMENT;
+        req.commentId = commentId;
+        req.userId = userId;
+        req.documentId = documentId;
+        req.timestamp = System.currentTimeMillis();
+        return req;
+    }
+
+    /**
+     * Internal WebSocket ClientEndpoint that manages a single document-user session.
+     */
+
     @ClientEndpoint
     public class CollaborativeEditClientEndpoint {
 
