@@ -41,7 +41,19 @@ public class CrdtOperation {
     public static CrdtOperation fromClientInsert(ClientEditRequest req, List<String> visibleIds) {
         String targetId = req.userId + "-" + req.timestamp;
         
-        String parentId = (req.position <= 0 || visibleIds.isEmpty()) ? "root" : visibleIds.get(Math.min(req.position - 1, visibleIds.size() - 1));
+        // Fix parent ID selection for mid-sentence insertions
+        String parentId;
+        if (req.position <= 0) {
+            parentId = "root";
+        } else if (req.position >= visibleIds.size()) {
+            // If inserting after the last character, use the last character as parent
+            parentId = visibleIds.get(visibleIds.size() - 1);
+        } else {
+            // For mid-sentence insertions, use the character before the insertion point as parent
+            parentId = visibleIds.get(req.position - 1);
+        }
+        
+        System.err.println("Parent ID: " + parentId);
 
         return insert(
             req.documentId,
@@ -55,8 +67,17 @@ public class CrdtOperation {
 
     public static CrdtOperation fromClientDelete(ClientEditRequest req, List<String> visibleIds) {   
         String targetId = "";
+        
+        // Debug log the state
+        System.err.println("Delete request at position: " + req.position + 
+                          ", visibleIds size: " + visibleIds.size());
+        
+        // Ensure position is within bounds
         if (req.position >= 0 && req.position < visibleIds.size()) {
             targetId = visibleIds.get(req.position);
+            System.err.println("Target ID for deletion: " + targetId);
+        } else {
+            System.err.println("WARNING: Delete position out of bounds: " + req.position);
         }
 
         return delete(
@@ -66,4 +87,4 @@ public class CrdtOperation {
             req.documentId
         );
     }
-} 
+}

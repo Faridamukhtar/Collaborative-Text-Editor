@@ -61,6 +61,8 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
         try {
             sendUserList(doc, documentSessions.get(documentId));
+            session.sendMessage(new TextMessage(doc.getCrdtTree().getText()));
+
         } catch (IOException e) {
             e.printStackTrace();
         }

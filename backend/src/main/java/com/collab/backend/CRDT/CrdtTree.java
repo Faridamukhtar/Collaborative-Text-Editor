@@ -1,7 +1,6 @@
 package com.collab.backend.crdt;
 
 import java.util.*;
-
 import com.collab.backend.websocket.ClientEditRequest;
 
 public class CrdtTree {
@@ -23,13 +22,18 @@ public class CrdtTree {
             nodeMap.put(op.id, newNode);
 
             int insertPos = findCorrectInsertionPosition(op);
+            if (insertPos < 0 || insertPos > visibleCharacterIdsInOrder.size()) {
+                insertPos = clientEditRequest.position; // fallback to raw position
+            }
             visibleCharacterIdsInOrder.add(insertPos, op.id);
         } else if (clientEditRequest.type == ClientEditRequest.Type.DELETE) {
             CrdtOperation op = CrdtOperation.fromClientDelete(clientEditRequest, this.getVisibleIds());
-            CrdtNode target = nodeMap.get(op.targetId);
+            if (clientEditRequest.position < 0 || clientEditRequest.position >= visibleCharacterIdsInOrder.size()) return;
+            String idToDelete = visibleCharacterIdsInOrder.get(clientEditRequest.position);
+            CrdtNode target = nodeMap.get(idToDelete);
             if (target != null && !target.isDeleted) {
                 target.isDeleted = true;
-                visibleCharacterIdsInOrder.remove(op.targetId);
+                visibleCharacterIdsInOrder.remove(clientEditRequest.position);
             }
         }
     }
@@ -37,35 +41,53 @@ public class CrdtTree {
     private int findCorrectInsertionPosition(CrdtOperation op) {
         if (visibleCharacterIdsInOrder.isEmpty()) return 0;
 
+        int parentIndex = -1;
+        if (!"root".equals(op.parentId)) {
+            parentIndex = visibleCharacterIdsInOrder.indexOf(op.parentId);
+        }
+
         if ("root".equals(op.parentId)) {
-            for (int i = visibleCharacterIdsInOrder.size() - 1; i >= 0; i--) {
-                CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(i));
-                if ("root".equals(node.parentId)) {
-                    if (compare(op, node) > 0) {
-                        return i + 1;
-                    }
-                }
+            int pos = 0;
+            while (pos < visibleCharacterIdsInOrder.size()) {
+                CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(pos));
+                if (!"root".equals(node.parentId) || compare(op, node) <= 0) break;
+                pos++;
             }
-            return 0;
+            return pos;
+        }
+
+        if (parentIndex != -1) {
+            int pos = parentIndex + 1;
+            while (pos < visibleCharacterIdsInOrder.size()) {
+                CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(pos));
+                if (!op.parentId.equals(node.parentId) || compare(op, node) <= 0) break;
+                pos++;
+            }
+            return pos;
+        }
+
+        CrdtNode parent = nodeMap.get(op.parentId);
+        if (parent != null) {
+            for (int i = 0; i < visibleCharacterIdsInOrder.size(); i++) {
+                CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(i));
+                if (isDescendantOf(node, parent)) return i;
+            }
         }
 
         for (int i = 0; i < visibleCharacterIdsInOrder.size(); i++) {
             CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(i));
-            if (op.parentId.equals(node.parentId)) {
-                if (compare(op, node) < 0) {
-                    return i;
-                }
-            }
-        }
-
-        for (int i = visibleCharacterIdsInOrder.size() - 1; i >= 0; i--) {
-            CrdtNode node = nodeMap.get(visibleCharacterIdsInOrder.get(i));
-            if (op.parentId.equals(node.parentId)) {
-                return i + 1;
-            }
+            if (compare(op, node) < 0) return i;
         }
 
         return visibleCharacterIdsInOrder.size();
+    }
+
+    private boolean isDescendantOf(CrdtNode potential, CrdtNode ancestor) {
+        if (potential == null || ancestor == null) return false;
+        if (potential.parentId == null) return false;
+        if (potential.parentId.equals(ancestor.id)) return true;
+        CrdtNode parent = nodeMap.get(potential.parentId);
+        return isDescendantOf(parent, ancestor);
     }
 
     private int compare(CrdtOperation o1, CrdtNode o2) {
@@ -94,18 +116,13 @@ public class CrdtTree {
 
     public String getText() {
         StringBuilder sb = new StringBuilder();
-        dfs(root, sb);
-        return sb.toString();
-    }
-
-    private void dfs(CrdtNode node, StringBuilder sb) {
-        if (!node.id.equals("root") && !node.isDeleted) {
-            sb.append(node.value);
+        for (String id : visibleCharacterIdsInOrder) {
+            CrdtNode node = nodeMap.get(id);
+            if (node != null && !node.isDeleted) {
+                sb.append(node.value);
+            }
         }
-        List<CrdtNode> ordered = new ArrayList<>(node.children);
-        ordered.sort(new CrdtNodeComparator());
-        for (CrdtNode child : ordered)
-            dfs(child, sb);
+        return sb.toString();
     }
 
     public List<String> getVisibleIds() {
@@ -117,10 +134,9 @@ public class CrdtTree {
     }
 
     public void clear() {
-        root.children.clear();                      
-        nodeMap.clear();                           
-        visibleCharacterIdsInOrder.clear();        
-        nodeMap.put("root", root);                 
+        root.children.clear();
+        nodeMap.clear();
+        visibleCharacterIdsInOrder.clear();
+        nodeMap.put("root", root);
     }
-    
 }

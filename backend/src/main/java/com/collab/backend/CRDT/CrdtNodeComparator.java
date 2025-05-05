@@ -5,7 +5,14 @@ import java.util.Comparator;
 public class CrdtNodeComparator implements Comparator<CrdtNode> {
     @Override
     public int compare(CrdtNode n1, CrdtNode n2) {
-        int t = Long.compare(n2.timestamp, n1.timestamp); // Descending
-        return (t != 0) ? t : n1.userId.compareTo(n2.userId);
+        // Compare by timestamp in ascending order (older edits first)
+        int timestampComparison = Long.compare(n1.timestamp, n2.timestamp);
+
+        if (timestampComparison != 0) {
+            return timestampComparison;
+        }
+
+        // If timestamps are equal, compare lexicographically by userId
+        return n1.userId.compareTo(n2.userId);
     }
 }
