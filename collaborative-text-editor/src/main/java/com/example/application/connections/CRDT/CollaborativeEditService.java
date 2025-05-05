@@ -90,9 +90,10 @@ public class CollaborativeEditService {
         return req;
     }
 
-    public static ClientEditRequest createAddCommentRequest(String commentId, int position, int endPosition, String documentId) {
+    public static ClientEditRequest createAddCommentRequest(String userId, String commentId, int position, int endPosition, String documentId) {
         ClientEditRequest req = new ClientEditRequest();
         req.type = ClientEditRequest.Type.ADD_COMMENT;
+        req.userId = userId;
         req.position = position;
         req.endPosition = endPosition;
         req.commentId = commentId;
@@ -101,14 +102,11 @@ public class CollaborativeEditService {
         return req;
     }
 
-    public static ClientEditRequest createDeleteCommentRequest(String commentId, int position, int endPosition, String documentId) {
+    public static ClientEditRequest createDeleteCommentRequest(String commentId) {
         ClientEditRequest req = new ClientEditRequest();
         req.type = ClientEditRequest.Type.DELETE_COMMENT;
-        req.position = position;
-        req.endPosition = endPosition;
         req.commentId = commentId;
         req.timestamp = System.currentTimeMillis();
-        req.documentId = documentId;
         return req;
     }
 

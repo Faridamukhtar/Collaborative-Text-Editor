@@ -116,6 +116,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         // ✅ Handle new comment addition
         if (req.getType() == ClientEditRequest.Type.ADD_COMMENT) {
             CommentModel comment = new CommentModel(
+                req.getUserId(),
                 req.getCommentId(),
                 req.getValue(),
                 req.getPosition(),
