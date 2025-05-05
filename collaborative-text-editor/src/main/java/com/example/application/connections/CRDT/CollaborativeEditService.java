@@ -57,15 +57,15 @@ public class CollaborativeEditService {
         // If the WebSocket was closed due to idle timeout or other non-fatal reasons, reconnect
         if (reason.getCloseCode() == CloseReason.CloseCodes.NORMAL_CLOSURE) {
             System.out.println("Attempting to reconnect...");
-            reconnect(session.getRequestURI().getPath().split("/")[2]);
+            reconnect(session.getRequestURI().getPath().split("/")[2], session.getRequestURI().getQuery().split("&")[1].split("=")[1]);
         }
     }
 
-    private void reconnect(String documentId) {
+    private void reconnect(String documentId, String userId) {
         try {
             // Wait for 5 seconds before reconnecting
             Thread.sleep(5000);
-            connectWebSocket(documentId); // Attempt to reconnect
+            connectWebSocket(documentId, userId); // Attempt to reconnect
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
