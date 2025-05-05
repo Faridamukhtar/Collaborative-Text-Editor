@@ -128,6 +128,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         tree.apply(req);
 
         String updatedText = tree.getText();
+        System.out.println("Updated text: " + updatedText);
         Set<WebSocketSession> sessions = documentSessions.get(docId);
 
         TextMessage messageSent = new TextMessage(updatedText);

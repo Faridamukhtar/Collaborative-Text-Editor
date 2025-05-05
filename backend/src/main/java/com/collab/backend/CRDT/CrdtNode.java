@@ -1,6 +1,6 @@
 package com.collab.backend.crdt;
 
-import java.util.*;
+import java.util.Objects;
 
 public class CrdtNode {
     public final String id;
@@ -9,8 +9,10 @@ public class CrdtNode {
     public final long timestamp;
     public final String userId;
     public boolean isDeleted = false;
-    // Initialize with CrdtNodeComparator to ensure consistent ordering
-    public final PriorityQueue<CrdtNode> children = new PriorityQueue<>(new CrdtNodeComparator());
+
+    // Explicit left/right links for linear CRDT structure
+    public CrdtNode left;
+    public CrdtNode right;
 
     public CrdtNode(String id, String value, String parentId, long timestamp, String userId) {
         this.id = id;
