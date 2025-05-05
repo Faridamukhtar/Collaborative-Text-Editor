@@ -5,6 +5,7 @@ import com.collab.backend.models.CommentModel;
 import com.collab.backend.models.DocumentModel;
 import com.collab.backend.models.UserModel;
 import com.collab.backend.service.DocumentService;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -23,14 +24,14 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
     @Autowired
     private DocumentService documentService;
 
-    // Track WebSocket sessions per document
     private final Map<String, Set<WebSocketSession>> documentSessions = new ConcurrentHashMap<>();
 
-    // Track userId per session
     private final Map<WebSocketSession, String> sessionToUserId = new ConcurrentHashMap<>();
 
-    // Track documentId per session
     private final Map<WebSocketSession, String> sessionToDocumentId = new ConcurrentHashMap<>();
+
+    private final Map<String, Integer> trackCursors = new ConcurrentHashMap<>();
+
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
@@ -56,7 +57,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        documentSessions.computeIfAbsent(documentId, k -> ConcurrentHashMap.newKeySet()).add(session);
+        documentSessions.computeIfAbsent(documentId, _ -> ConcurrentHashMap.newKeySet()).add(session);
         sessionToUserId.put(session, userId);
         sessionToDocumentId.put(session, documentId);
 
@@ -87,7 +88,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
             DocumentModel doc = documentService.getDocumentById(documentId);
             if (doc != null && userId != null) {
-                doc.getUsers().remove(userId); // Optional: auto-remove user on disconnect
+                doc.getUsers().remove(userId); 
                 try {
                     sendUserList(doc, documentSessions.get(documentId));
                 } catch (IOException e) {
@@ -97,6 +98,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
         System.out.println("Received message: " + message.getPayload());
@@ -105,7 +107,13 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
             System.err.println("Invalid message type: " + req.getType());
             return;
         }
+        else if (req.getType() == ClientEditRequest.Type.CURSOR) {
+            updateCursor(session, req);
+            return;
+
+        }
         String docId = req.getDocumentId();
+
         String userId = req.getUserId();
         DocumentModel doc = documentService.getDocumentById(docId);
         if (doc == null) {
@@ -169,7 +177,8 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
                 try {
                     s.sendMessage(messageSent);
                 } catch (IOException e) {
-                    System.err.println("❌ Error sending raw text: " + e.getMessage());
+                    System.err.println("Failed to send message to session: " + s.getId());
+                    e.printStackTrace();
                 }
             }
         }
@@ -195,6 +204,40 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private void updateCursor(WebSocketSession session, ClientEditRequest req) throws IOException {
+        String userId = req.getUserId();
+        int position =req.getPosition();
+        String documentId = req.getDocumentId();
+        trackCursors.put(userId, position);
+
+        Set<WebSocketSession> sessions = documentSessions.get(documentId);
+        if (sessions == null) return;
+
+        String cursorUpdateMessage = createCursorUpdateMessage();
+        
+        sendToSessions(sessions, cursorUpdateMessage);
+    }
+
+    private String createCursorUpdateMessage() throws JsonProcessingException {
+        System.out.println(trackCursors);
+    
+        Map<String, Object> cursorMsg = new HashMap<>();
+        cursorMsg.put("type", "CURSOR_UPDATE");
+        cursorMsg.put("cursors", trackCursors);
+        System.out.println(cursorMsg);
+    
+        return objectMapper.writeValueAsString(cursorMsg);
+    }
+    
+    private void sendToSessions(Set<WebSocketSession> sessions, String message) throws IOException {
+        for (WebSocketSession s : sessions) {
+            if (s.isOpen()) {
+                s.sendMessage(new TextMessage(message));
+            }
+        }
+    }
+
+    
     private String extractQueryParam(String query, String key) {
         if (query == null || !query.contains("=")) return null;
         for (String param : query.split("&")) {

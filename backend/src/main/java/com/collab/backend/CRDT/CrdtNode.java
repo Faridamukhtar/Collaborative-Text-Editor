@@ -10,7 +10,6 @@ public class CrdtNode {
     public final String userId;
     public boolean isDeleted = false;
 
-    // Explicit left/right links for linear CRDT structure
     public CrdtNode left;
     public CrdtNode right;
 

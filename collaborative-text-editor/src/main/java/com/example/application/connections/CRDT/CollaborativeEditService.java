@@ -34,7 +34,6 @@ public class CollaborativeEditService {
         if (session != null && session.isOpen()) {
             try {
                 session.close();
-                System.out.println("❎ Closed WebSocket session for " + key);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -47,9 +46,9 @@ public class CollaborativeEditService {
             String wsUrl = String.format("ws://localhost:8081/crdt/%s?documentId=%s&userId=%s", documentId, documentId, userId);
             WebSocketContainer container = ContainerProvider.getWebSocketContainer();
             container.connectToServer(new CollaborativeEditClientEndpoint(documentId, userId), new URI(wsUrl));
-            System.out.println("✅ WebSocket connection initialized for " + key);
+            System.out.println("WebSocket connection initialized for " + key);
         } catch (Exception e) {
-            throw new RuntimeException("❌ WebSocket connection failed", e);
+            throw new RuntimeException("WebSocket connection failed", e);
         }
     }
 
@@ -60,13 +59,21 @@ public class CollaborativeEditService {
             try {
                 String json = mapper.writeValueAsString(req);
                 session.getAsyncRemote().sendText(json);
-                System.out.println("📤 Sent edit request: " + json);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to send WebSocket message", e);
             }
         } else {
-            System.err.println("❗ Cannot send. WebSocket session is closed or null for " + key);
+            System.err.println("Cannot send. WebSocket session is closed or null for " + key);
         }
+    }
+
+    public static ClientEditRequest updateUserCursorLine(int position, String userId, String documentId) {
+        ClientEditRequest req = new ClientEditRequest();
+        req.type = ClientEditRequest.Type.CURSOR;
+        req.position = position;
+        req.userId = userId;
+        req.documentId = documentId;
+        return req;
     }
 
     public static ClientEditRequest createInsertRequest(String value, int position, String userId, String documentId) {
@@ -89,6 +96,7 @@ public class CollaborativeEditService {
         req.documentId = documentId;
         return req;
     }
+
 
     public static ClientEditRequest createAddCommentRequest(String documentId, String userId, String commentId, int position, int endPosition, String value) {
         ClientEditRequest req = new ClientEditRequest();
@@ -116,6 +124,7 @@ public class CollaborativeEditService {
     /**
      * Internal WebSocket ClientEndpoint that manages a single document-user session.
      */
+
     @ClientEndpoint
     public class CollaborativeEditClientEndpoint {
 
@@ -131,7 +140,6 @@ public class CollaborativeEditService {
         public void onOpen(Session session) {
             String key = sessionKey(documentId, userId);
             sessionMap.put(key, session);
-            System.out.println("🔗 WebSocket opened for " + key);
         }
 
         @OnMessage
@@ -140,21 +148,20 @@ public class CollaborativeEditService {
             CollaborativeEditUiListener listener = listenerMap.get(key);
             if (listener != null) {
                 listener.onServerMessage(message);
-            } else {
-                System.err.println("⚠ No UI listener for key: " + key);
-            }
+            } 
         }
 
         @OnClose
         public void onClose(Session session, CloseReason reason) {
             String key = sessionKey(documentId, userId);
             sessionMap.remove(key);
-            System.out.println("❎ WebSocket closed for " + key + " - Reason: " + reason);
         }
 
         @OnError
         public void onError(Session session, Throwable throwable) {
-            System.err.println("❌ WebSocket error for " + userId + "_" + documentId + ": " + throwable.getMessage());
+            String key = sessionKey(documentId, userId);
+            System.err.println("WebSocket error for " + key + ": " + throwable.getMessage());
+            sessionMap.remove(key);
         }
     }
 }

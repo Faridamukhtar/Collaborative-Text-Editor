@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class DocumentModel {
-    private final String id;          // Unique ID for the document
+    private final String id;          
     private final String viewCode;
     private final String editCode;
 
@@ -19,13 +19,10 @@ public class DocumentModel {
 
     private final CrdtTree crdtTree = new CrdtTree();
 
-    // userId -> UserModel
     private final Map<String, UserModel> users = new HashMap<>();
 
-    // userId -> cursor position as string (e.g., "12" or "line:5,col:3")
     private final Map<String, String> userCursors = new HashMap<>();
 
-    // Active WebSocket user IDs
     private final Set<String> activeUsers = new HashSet<>();
 
     private final List<CommentModel> comments = new ArrayList<>();

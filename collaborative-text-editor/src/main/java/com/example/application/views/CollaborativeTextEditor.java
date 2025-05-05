@@ -70,6 +70,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private final Deque<EditorState> redoStack = new ArrayDeque<>();
     private boolean isUndoRedoOperation = false;
     private int currentCursorPosition = 0;
+    private List<String> active_users;
 
     @Autowired
     private CollaborativeEditService collaborativeEditService;
@@ -89,7 +90,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
         collaborativeEditService.registerListener(documentId, userId, this);
         collaborativeEditService.connectWebSocket(documentId, userId);
-        ui.addDetachListener(e -> collaborativeEditService.unregisterListener(documentId, userId));
+        ui.addDetachListener(_ -> collaborativeEditService.unregisterListener(documentId, userId));
 
         initializeEditorUi();
     }
@@ -97,8 +98,9 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private void initializeEditorUi() {
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
         activeUsers.put(userId, ui);
-        ui.addDetachListener(event -> activeUsers.remove(userId));
-    
+
+        ui.addDetachListener(_ -> activeUsers.remove(userId));
+
         setSizeFull();
         setPadding(true);
         setSpacing(true);
@@ -124,37 +126,35 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 updateExportResource(event.getValue());
             }
         });
-    
-        editor.getElement().addEventListener("keyup", e -> updateCursorPosition());
-        editor.getElement().addEventListener("click", e -> updateCursorPosition());
-    
-        // Toolbar
-        Button undoButton = new Button("Undo", VaadinIcon.ARROW_BACKWARD.create());
-        undoButton.addClickListener(e -> undo());
-    
-        Button redoButton = new Button("Redo", VaadinIcon.ARROW_FORWARD.create());
-        redoButton.addClickListener(e -> redo());
-    
-        Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
-        exportButton.addClickListener(e ->
-            UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();")
-        );
-    
-        Button commentButton = new Button("Comment", VaadinIcon.COMMENT.create());
-        commentButton.addClickListener(e -> addCommentBox());
-    
-        HorizontalLayout editorToolbar = new HorizontalLayout(
-            commentButton, undoButton, redoButton, new Div(), exportButton
-        );
+
+
+        editor.getElement().addEventListener("keyup", _ -> updateCursorPosition());
+        editor.getElement().addEventListener("click", _ -> updateCursorPosition());
+
+        HorizontalLayout editorToolbar = new HorizontalLayout();
         editorToolbar.setWidthFull();
         editorToolbar.setPadding(true);
         editorToolbar.setSpacing(true);
         editorToolbar.getStyle()
-            .set("border-bottom", "1px solid var(--lumo-contrast-10pct)")
-            .set("background-color", "var(--lumo-contrast-5pct)");
-    
-        // Editor container
-        VerticalLayout editorContainer = new VerticalLayout(editorToolbar, editor);
+                .set("border-bottom", "1px solid var(--lumo-contrast-10pct)")
+                .set("background-color", "var(--lumo-contrast-5pct)");
+
+        Button undoButton = new Button("Undo", VaadinIcon.ARROW_BACKWARD.create());
+        undoButton.addClickListener(_ -> undo());
+        Button redoButton = new Button("Redo", VaadinIcon.ARROW_FORWARD.create());
+        redoButton.addClickListener(_ -> redo());
+        Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
+        exportButton.addClickListener(_ -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
+        Button commentButton = new Button("Comment", VaadinIcon.COMMENT.create());
+        commentButton.addClickListener(e -> addCommentBox());
+      
+        editorToolbar.add(undoButton, redoButton);
+        editorToolbar.addAndExpand(new Div());
+        editorToolbar.add(exportButton);
+        editorToolbar.add(commentButton);
+
+        VerticalLayout editorContainer = new VerticalLayout();
+
         editorContainer.setSizeFull();
         editorContainer.setPadding(false);
         editorContainer.setSpacing(false);
@@ -208,6 +208,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private void updateCursorPosition() {
         editor.getElement().executeJs("return this.inputElement.selectionStart")
                 .then(Integer.class, (SerializableConsumer<Integer>) pos -> currentCursorPosition = pos);
+        onCursorLineChanged(currentCursorPosition);
     }
 
     private void initializeConnector() {
@@ -216,15 +217,16 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
+        System.out.println("onCharacterInserted called with character: " + character + ", position: " + position);
         if (suppressInput) return;
-        
-        saveStateToUndoStack(
-            OperationType.INSERT,
-            character,
-            position,
-            editor.getValue()
-        );
-        
+        if (!isUndoRedoOperation) {
+            saveStateToUndoStack(
+                OperationType.INSERT,
+                character,
+                position,
+                editor.getValue()
+            );
+        }
         ClientEditRequest req = CollaborativeEditService.createInsertRequest(
             character, position, userId, documentId
         );
@@ -233,23 +235,25 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
+        System.out.println("onCharacterDeleted called with position: " + position);
         if (suppressInput) return;
-
-        // 👇 Capture the editor content BEFORE deletion happens
+        System.out.println("Deleting character at position: " + position);
         String currentText = editor.getValue();
         
         if (position >= 0 && position < currentText.length()) {
             String deletedChar = currentText.substring(position, position + 1);
 
             // Save full state BEFORE the deletion
-            saveStateToUndoStack(
-                OperationType.DELETE,
-                deletedChar,
-                position,
-                currentText
-            );
+            if (!isUndoRedoOperation)
+            {
+                saveStateToUndoStack(
+                    OperationType.DELETE,
+                    deletedChar,
+                    position,
+                    currentText
+                );
+            }
 
-            // Now send deletion request
             ClientEditRequest req = CollaborativeEditService.createDeleteRequest(
                 position, userId, documentId
             );
@@ -260,19 +264,22 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
+        System.out.println("onCharacterBatchInserted called with text: " + text + ", position: " + position);
         if (suppressInput || text.isEmpty()) return;
         
-        saveStateToUndoStack(
-            OperationType.BATCH_INSERT,
-            text,
-            position,
-            editor.getValue()
-        );
+        if(!isUndoRedoOperation) {
+            saveStateToUndoStack(
+                OperationType.BATCH_INSERT,
+                text,
+                position,
+                editor.getValue()
+            );
+        }
         
         for (int i = 0; i < text.length(); i++) {
             ClientEditRequest req = CollaborativeEditService.createInsertRequest(
                 String.valueOf(text.charAt(i)), 
-                position + i, 
+                position, 
                 userId, 
                 documentId
             );
@@ -282,23 +289,28 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterBatchDeleted(int startPosition, int count) {
+        System.out.println("onCharacterBatchDeleted called with startPosition: " + startPosition + ", count: " + count);
         if (suppressInput || count <= 0) return;
 
         String currentText = editor.getValue();
-        if (startPosition >= 0 && startPosition + count <= currentText.length()) {
-            String deletedText = currentText.substring(startPosition, startPosition + count);
+        System.out.println("Current text: " + currentText.length() + ", startPosition: " + startPosition + ", count: " + count);
+        if (startPosition >= 0) {
+            System.out.println("Deleting characters from position: " + startPosition + " to " + (startPosition + count));
+            String deletedText = currentText.substring(startPosition-count+1, startPosition+1);
 
-            saveStateToUndoStack(
-                OperationType.BATCH_DELETE,
-                deletedText,
-                startPosition,
-                currentText
-            );
-
+            if(!isUndoRedoOperation) {
+                saveStateToUndoStack(
+                    OperationType.BATCH_DELETE,
+                    deletedText,
+                    startPosition,
+                    currentText
+                );
+            }
             for (int i = 0; i < count; i++) {
                 ClientEditRequest req = CollaborativeEditService.createDeleteRequest(
                     startPosition, userId, documentId
                 );
+                System.out.println("Sending delete request for position: " + req);
                 collaborativeEditService.sendEditRequest(req);
             }
         }
@@ -318,60 +330,111 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     }
 
     private void undo() {
+        System.out.println("Undoing last operation...");
         if (undoStack.isEmpty()) return;
         
         EditorState lastState = undoStack.pop();
-        
+        System.out.println("Last state: " + lastState);
         if (!userId.equals(lastState.userId())) {
             undo();
             return;
         }
-        
-        suppressInput = true;
         isUndoRedoOperation = true;
+        System.out.println("Undoing operation of type: " + lastState.type());
         try {
             String current = editor.getValue();
             switch (lastState.type()) {
                 case INSERT -> {
+                    System.out.println("Undoing INSERT operation");
                     int pos = lastState.position();
+                    onCharacterDeleted(pos);
                     if (pos >= 0 && pos < current.length() && 
                         current.startsWith(lastState.text(), pos)) {
+                        suppressInput = true;
                         editor.setValue(
                             current.substring(0, pos) + 
                             current.substring(pos + lastState.text().length())
                         );
+                        suppressInput = false;
+
                         currentCursorPosition = pos;
                     }
+                    lastState = new EditorState(
+                        OperationType.INSERT,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case DELETE -> {
                     int pos = lastState.position();
+                    onCharacterInserted(lastState.text(), pos);
+                    suppressInput = true;
+
                     editor.setValue(
                         current.substring(0, pos) +
                         lastState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
+
                     currentCursorPosition = pos + lastState.text().length();
+                    lastState = new EditorState(
+                        OperationType.DELETE,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case BATCH_INSERT -> {
                     int pos = lastState.position();
                     String inserted = lastState.text();
+                    System.out.println("Undoing INSERT operation");
+                    onCharacterBatchDeleted(pos, inserted.length());
                     if (pos >= 0 && pos + inserted.length() <= current.length() && 
                         current.startsWith(inserted, pos)) {
+                        suppressInput = true;
                         editor.setValue(
                             current.substring(0, pos) + 
                             current.substring(pos + inserted.length())
                         );
+                        suppressInput = false;
                         currentCursorPosition = pos;
                     }
+                    lastState = new EditorState(
+                        OperationType.BATCH_INSERT,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case BATCH_DELETE -> {
                     int pos = lastState.position();
+                    onCharacterBatchInserted(lastState.text(), pos);
+                    System.out.println("length" + lastState.text().length() + " current: " + current.length() + " pos: " + pos);
+                    suppressInput = true;
                     editor.setValue(
                         current.substring(0, pos) +
                         lastState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
+                    System.out.println("Inserting text: " + lastState.text() + " at position: " + pos);
                     currentCursorPosition = pos + lastState.text().length();
+                    lastState = new EditorState(
+                        OperationType.BATCH_DELETE,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
             }
             
@@ -381,8 +444,8 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             );
             
             redoStack.push(lastState);
+            isUndoRedoOperation = false;
         } finally {
-            suppressInput = false;
             isUndoRedoOperation = false;
         }
     }
@@ -423,52 +486,95 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         if (redoStack.isEmpty()) return;
         
         EditorState nextState = redoStack.pop();
-        
-        suppressInput = true;
         isUndoRedoOperation = true;
         try {
             String current = editor.getValue();
+            System.out.println("Redoing operation of type: " + nextState.type());
             switch (nextState.type()) {
                 case INSERT -> {
                     int pos = nextState.position();
+                    onCharacterInserted(nextState.text(), pos);
+                    suppressInput = true;
                     editor.setValue(
                         current.substring(0, pos) +
                         nextState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
                     currentCursorPosition = pos + nextState.text().length();
+                    nextState = new EditorState(
+                        OperationType.DELETE,
+                        nextState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case DELETE -> {
                     int pos = nextState.position();
+                    onCharacterDeleted(pos);
                     if (pos >= 0 && pos < current.length() && 
                         current.startsWith(nextState.text(), pos)) {
+                        suppressInput = true;
                         editor.setValue(
                             current.substring(0, pos) + 
                             current.substring(pos + nextState.text().length())
                         );
+                        suppressInput = false;
                         currentCursorPosition = pos;
                     }
+                    nextState = new EditorState(
+                        OperationType.INSERT,
+                        nextState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
-                case BATCH_INSERT -> {
+                case BATCH_DELETE -> {
                     int pos = nextState.position();
+                    onCharacterBatchDeleted(pos, nextState.text().length());
+                    suppressInput = true;
                     editor.setValue(
                         current.substring(0, pos) +
                         nextState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
                     currentCursorPosition = pos + nextState.text().length();
+                    nextState = new EditorState(
+                        OperationType.BATCH_DELETE,
+                        nextState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
-                case BATCH_DELETE -> {
+                case BATCH_INSERT -> {
                     int pos = nextState.position();
-                    String toDelete = nextState.text();
-                    if (pos >= 0 && pos + toDelete.length() <= current.length() && 
-                        current.startsWith(toDelete, pos)) {
+                    String toInsert = nextState.text();
+                    onCharacterBatchInserted(toInsert, pos);
+                    System.out.println("length" + toInsert.length() + " current: " + current.length() + " pos: " + pos);
+                    if (pos >= 0 ) {
+                        System.out.println("Deleting text: " + toInsert + " at position: " + pos);
+                        suppressInput = true;
                         editor.setValue(
-                            current.substring(0, pos) + 
-                            current.substring(pos + toDelete.length())
+                            current.substring(0, pos) + toInsert
                         );
+                        suppressInput = false;
                         currentCursorPosition = pos;
                     }
+                    nextState = new EditorState(
+                        OperationType.BATCH_INSERT,
+                        toInsert,
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
             }
             
@@ -479,7 +585,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             
             undoStack.push(nextState);
         } finally {
-            suppressInput = false;
             isUndoRedoOperation = false;
         }
     }
@@ -494,10 +599,12 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 for (int i = 0; i < users.size(); i++) {
                     usernames.add(users.get(i).getAsString());
                 }
+                active_users=usernames;
                 updateActiveUserListUI(usernames);
             } catch (Exception e) {
-                System.err.println("\u274C Failed to parse ACTIVE_USERS: " + e.getMessage());
+                System.err.println("Failed to parse ACTIVE_USERS: " + e.getMessage());
             }
+            
             return;
         }
     
@@ -523,6 +630,23 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 removeComment(commentId);
             } catch (Exception e) {
                 System.err.println("❌ Failed to parse commentDeleted: " + e.getMessage());
+
+        else if (text.trim().startsWith("{") && text.contains("\"type\":\"CURSOR_UPDATE\"")) {
+            System.out.println(text);
+            try {
+                JsonObject json = JsonParser.parseString(text).getAsJsonObject();
+                JsonObject cursors = json.getAsJsonObject("cursors");
+                Map<String, Integer> cursorMap = new HashMap<>();
+        
+                for (String key : cursors.keySet()) {
+                    int pos = cursors.get(key).getAsInt();
+                    cursorMap.put(key, pos);
+                }
+        
+                updateActiveUserCursorUI(cursorMap);
+            } catch (Exception e) {
+                System.err.println("Failed to parse CURSOR_UPDATE: " + e.getMessage());
+
             }
             return;
         }
@@ -538,6 +662,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     
 
     private void updateActiveUserListUI(List<String> usernames) {
+        active_users = usernames;
         ui.access(() -> {
             activeUserListSection.removeAll();
             Div header = new Div("\uD83D\uDFE2 Active Users (" + usernames.size() + "):");
@@ -550,6 +675,32 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             }
         });
     }
+
+    private void updateActiveUserCursorUI(Map<String, Integer> userCursors) {
+        ui.access(() -> {
+            activeUserListSection.getChildren()
+                .filter(component -> "cursor".equals(component.getElement().getProperty("data-type")))
+                .forEach(activeUserListSection::remove);
+    
+            Div header = new Div("📍 Cursors:");
+            header.getElement().setProperty("data-type", "cursor");
+            header.getStyle().set("margin-top", "1rem")
+                                .set("margin-bottom", "0.5rem")
+                                .set("font-weight", "bold");
+            activeUserListSection.add(header);
+    
+            userCursors.forEach((user, pos) -> {
+                if (active_users.contains(user)) {
+                    String label = user.equals(userId) ? user + " (you)" : user;
+                    Div userDiv = new Div("• " + label + " → Pos: " + pos);
+                    userDiv.getElement().setProperty("data-type", "cursor");
+                    userDiv.getStyle().set("margin-left", "1rem").set("color", "blue");
+                    activeUserListSection.add(userDiv);
+                }
+            });
+        });
+    }
+    
 
     private void updateExportResource(String htmlContent) {
         String plainText = helpers.htmlToPlainText(htmlContent);
@@ -581,4 +732,12 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             .ifPresent(commentPanel::remove);
     }
     
+
+    @ClientCallable
+    public void onCursorLineChanged(int lineNumber) {
+        System.out.printf("user ", userId , "doc " , documentId , "position", lineNumber);
+        ClientEditRequest req = CollaborativeEditService.updateUserCursorLine(lineNumber, userId, documentId);
+        collaborativeEditService.sendEditRequest(req);
+    }
+
 }

@@ -23,19 +23,18 @@ public class DocumentRestController {
         // Create a new document and get the view and edit codes
         var codes = documentService.createDocument(initialContent);
         
-        // Join the document as an editor (using the edit code)
+        // Join the document as an editor
         var response = documentService.joinDocument(codes.get("editCode"));
 
         return "userId: " + response.get("userId") +
                 ", role: " + response.get("role") + 
                 ", documentId: " + response.get("documentId") +
-               ", viewCode: " + codes.get("viewCode") +
-               ", editCode: " + codes.get("editCode");
+                ", viewCode: " + codes.get("viewCode") +
+                ", editCode: " + codes.get("editCode");
     }
 
     @GetMapping("/join/{documentID}")
     public String joinDocument(@PathVariable String documentID) {
-        // The username is required for joining the document
         var response = documentService.joinDocument(documentID);
         return "userId: " + response.get("userId") +
                 ", documentId: " + response.get("documentId") +

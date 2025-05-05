@@ -4,7 +4,7 @@ import java.util.List;
 import com.collab.backend.websocket.ClientEditRequest;
 
 public class CrdtOperation {
-    public enum Type { INSERT, DELETE }
+    public enum Type { INSERT, DELETE , CURSOR }
 
     public Type type;
     public String id;
@@ -64,16 +64,12 @@ public class CrdtOperation {
     public static CrdtOperation fromClientDelete(ClientEditRequest req, List<String> visibleIds) {   
         String targetId = "";
         
-        // Debug log the state
         System.err.println("Delete request at position: " + req.position + 
-                          ", visibleIds size: " + visibleIds.size());
+                            ", visibleIds size: " + visibleIds.size());
         
-        // Ensure position is within bounds
         if (req.position >= 0 && req.position < visibleIds.size()) {
             targetId = visibleIds.get(req.position);
             System.err.println("Target ID for deletion: " + targetId);
-        } else {
-            System.err.println("WARNING: Delete position out of bounds: " + req.position);
         }
 
         return delete(
