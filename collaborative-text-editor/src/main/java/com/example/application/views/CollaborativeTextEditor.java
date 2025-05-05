@@ -6,15 +6,19 @@ import com.example.application.views.components.helpers;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import elemental.json.JsonValue;
+import com.google.gson.JsonElement;
 import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dependency.JsModule;
+import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Section;
 import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -59,6 +63,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private String role;
     private Anchor hiddenDownloadLink;
     private Div activeUserListSection = SidebarUtil.createActiveUserListSection();
+    private final VerticalLayout commentPanel = new VerticalLayout();
 
     private static final Map<String, UI> activeUsers = new ConcurrentHashMap<>();
     private final Deque<EditorState> undoStack = new ArrayDeque<>();
@@ -93,17 +98,17 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private void initializeEditorUi() {
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
         activeUsers.put(userId, ui);
+
         ui.addDetachListener(_ -> activeUsers.remove(userId));
 
         setSizeFull();
         setPadding(true);
         setSpacing(true);
-
+    
         H2 title = new H2("Live Collaborative Editor");
-        title.addClassName("header");
         Div header = new Div(title);
         header.getStyle().set("text-align", "left");
-
+    
         editor = new TextArea();
         if (content != null) {
             editor.setValue(content);
@@ -111,15 +116,17 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         }
         if ("viewer".equals(role) || (!viewCode.isEmpty() && editCode.isEmpty()))
             editor.setReadOnly(true);
+    
         editor.setWidthFull();
-        editor.setHeight("100%");
+        editor.setHeight("400px");
         editor.setLabel("Edit text below - changes are shared with all users");
-
+    
         editor.addValueChangeListener(event -> {
             if (!suppressInput && !isUndoRedoOperation) {
                 updateExportResource(event.getValue());
             }
         });
+
 
         editor.getElement().addEventListener("keyup", _ -> updateCursorPosition());
         editor.getElement().addEventListener("click", _ -> updateCursorPosition());
@@ -138,33 +145,54 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         redoButton.addClickListener(_ -> redo());
         Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
         exportButton.addClickListener(_ -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
-
+        Button commentButton = new Button("Comment", VaadinIcon.COMMENT.create());
+        commentButton.addClickListener(e -> addCommentBox());
+      
         editorToolbar.add(undoButton, redoButton);
         editorToolbar.addAndExpand(new Div());
         editorToolbar.add(exportButton);
+        editorToolbar.add(commentButton);
 
         VerticalLayout editorContainer = new VerticalLayout();
+
         editorContainer.setSizeFull();
         editorContainer.setPadding(false);
         editorContainer.setSpacing(false);
-        editorContainer.add(editorToolbar, editor);
         editorContainer.setFlexGrow(1, editor);
-
+    
+        // Comments panel
+        commentPanel.setPadding(true);
+        commentPanel.setSpacing(true);
+        commentPanel.getStyle()
+            .set("border-top", "1px solid #ccc")
+            .set("margin-top", "0.5rem")
+            .set("background-color", "#fdfdfd");
+    
+        Div commentHeader = new Div("💬 Comments:");
+        commentHeader.getStyle().set("font-weight", "bold");
+        commentPanel.add(commentHeader);
+    
+        VerticalLayout fullEditorArea = new VerticalLayout(editorContainer, commentPanel);
+        fullEditorArea.setSizeFull();
+        fullEditorArea.setSpacing(false);
+        fullEditorArea.setPadding(false);
+        fullEditorArea.setFlexGrow(1, editorContainer);
+    
         hiddenDownloadLink = new Anchor();
         hiddenDownloadLink.setId("hiddenDownloadLink");
         hiddenDownloadLink.getStyle().set("display", "none");
         hiddenDownloadLink.getElement().setAttribute("download", true);
-
+    
         Section sidebar = SidebarUtil.createSidebar(viewCode, editCode, userId, hiddenDownloadLink, activeUserListSection);
-
-        HorizontalLayout mainLayout = new HorizontalLayout(editorContainer, sidebar);
+    
+        HorizontalLayout mainLayout = new HorizontalLayout(fullEditorArea, sidebar);
         mainLayout.setSizeFull();
-        mainLayout.setFlexGrow(3, editorContainer);
+        mainLayout.setFlexGrow(3, fullEditorArea);
         mainLayout.setFlexGrow(1, sidebar);
-
+    
         add(mainLayout);
         initializeConnector();
-    }
+    }    
 
     private void saveInitialState(String content) {
         undoStack.push(new EditorState(
@@ -422,6 +450,38 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         }
     }
 
+    private void addCommentBox() {
+        TextArea commentInput = new TextArea("Write your comment");
+        commentInput.setWidthFull();
+    
+        Button postBtn = new Button("Post", e -> {
+            String comment = commentInput.getValue();
+            if (comment.isEmpty()) {
+                Notification.show("Comment cannot be empty.");
+                return;
+            }
+            String commentId = UUID.randomUUID().toString();
+            sendAddComment(userId, commentId, comment, currentCursorPosition, currentCursorPosition + comment.length());
+            // Show comment in panel
+            renderComment(commentId, userId, comment, currentCursorPosition, currentCursorPosition + comment.length());
+    
+            // Clear input
+            commentInput.clear();
+        });
+    
+        commentPanel.add(commentInput, postBtn);
+    }    
+    
+    private void sendAddComment(String userId, String commentId, String text, int start, int end) {
+        ClientEditRequest req = CollaborativeEditService.createAddCommentRequest(documentId, userId, commentId, start, end, text);
+        collaborativeEditService.sendEditRequest(req);
+    }
+
+    private void sendDeleteComment(String commentId) {
+        ClientEditRequest req = CollaborativeEditService.createDeleteCommentRequest(documentId, userId, commentId);
+        collaborativeEditService.sendEditRequest(req);
+    }
+    
     private void redo() {
         if (redoStack.isEmpty()) return;
         
@@ -547,6 +607,30 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             
             return;
         }
+    
+        if (text.contains("\"type\":\"commentAdded\"")) {
+            try {
+                JsonObject json = JsonParser.parseString(text).getAsJsonObject();
+                String commentId = json.get("commentId").getAsString();
+                String userId = json.get("userId").getAsString();
+                String commentText = json.get("text").getAsString();
+                int start = json.get("startIndex").getAsInt();
+                int end = json.get("endIndex").getAsInt();
+                renderComment(commentId, userId, commentText, start, end);
+            } catch (Exception e) {
+                System.err.println("❌ Failed to parse commentAdded: " + e.getMessage());
+            }
+            return;
+        }
+    
+        if (text.contains("\"type\":\"commentDeleted\"")) {
+            try {
+                JsonObject json = JsonParser.parseString(text).getAsJsonObject();
+                String commentId = json.get("commentId").getAsString();
+                removeComment(commentId);
+            } catch (Exception e) {
+                System.err.println("❌ Failed to parse commentDeleted: " + e.getMessage());
+
         else if (text.trim().startsWith("{") && text.contains("\"type\":\"CURSOR_UPDATE\"")) {
             System.out.println(text);
             try {
@@ -562,11 +646,11 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 updateActiveUserCursorUI(cursorMap);
             } catch (Exception e) {
                 System.err.println("Failed to parse CURSOR_UPDATE: " + e.getMessage());
+
             }
             return;
         }
     
-
         ui.access(() -> {
             ui.getPage().executeJs("window.suppressInputStart()");
             suppressInput = true;
@@ -575,6 +659,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             ui.getPage().executeJs("window.suppressInputEnd()");
         });
     }
+    
 
     private void updateActiveUserListUI(List<String> usernames) {
         active_users = usernames;
@@ -623,6 +708,30 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 () -> new ByteArrayInputStream(plainText.getBytes(StandardCharsets.UTF_8)));
         hiddenDownloadLink.setHref(resource);
     }
+
+    private void renderComment(String commentId, String author, String text, int start, int end) {
+        Div commentDiv = new Div("🗨 " + author + ": " + text);
+        commentDiv.setId(commentId);
+        commentDiv.getStyle()
+            .set("padding", "5px")
+            .set("margin", "4px 0")
+            .set("background-color", "#eef");
+    
+        Button deleteBtn = new Button(" ", VaadinIcon.TRASH.create());
+        deleteBtn.getStyle().set("margin-left", "10px").set("color", "red");
+        deleteBtn.addClickListener(e -> sendDeleteComment(commentId));
+    
+        commentDiv.add(deleteBtn);
+        commentPanel.add(commentDiv);
+    }
+    
+    private void removeComment(String commentId) {
+        commentPanel.getChildren()
+            .filter(comp -> comp.getId().isPresent() && comp.getId().get().equals(commentId))
+            .findFirst()
+            .ifPresent(commentPanel::remove);
+    }
+    
 
     @ClientCallable
     public void onCursorLineChanged(int lineNumber) {

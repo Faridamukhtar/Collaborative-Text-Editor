@@ -2,8 +2,10 @@ package com.collab.backend.models;
 
 import com.collab.backend.crdt.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -22,6 +24,9 @@ public class DocumentModel {
     private final Map<String, String> userCursors = new HashMap<>();
 
     private final Set<String> activeUsers = new HashSet<>();
+
+    private final List<CommentModel> comments = new ArrayList<>();
+
 
     public DocumentModel(String id, String viewCode, String editCode) {
         this.id = id;
@@ -99,4 +104,17 @@ public class DocumentModel {
     public void updateUserCursor(String userId, String cursorPosition) {
         userCursors.put(userId, cursorPosition);
     }
+
+    public List<CommentModel> getComments() {
+        return comments;
+    }
+    
+    public void addComment(CommentModel comment) {
+        comments.add(comment);
+    }
+    
+    public void removeCommentById(String commentId) {
+        comments.removeIf(c -> c.getCommentId().equals(commentId));
+    }
+    
 }
