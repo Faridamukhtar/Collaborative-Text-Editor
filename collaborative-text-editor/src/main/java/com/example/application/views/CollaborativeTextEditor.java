@@ -189,15 +189,16 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
+        System.out.println("onCharacterInserted called with character: " + character + ", position: " + position);
         if (suppressInput) return;
-        
-        saveStateToUndoStack(
-            OperationType.INSERT,
-            character,
-            position,
-            editor.getValue()
-        );
-        
+        if (!isUndoRedoOperation) {
+            saveStateToUndoStack(
+                OperationType.INSERT,
+                character,
+                position,
+                editor.getValue()
+            );
+        }
         ClientEditRequest req = CollaborativeEditService.createInsertRequest(
             character, position, userId, documentId
         );
@@ -213,12 +214,17 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         
         if (position >= 0 && position < currentText.length()) {
             String deletedChar = currentText.substring(position, position + 1);
-            saveStateToUndoStack(
-                OperationType.DELETE,
-                deletedChar,
-                position,
-                currentText
-            );
+
+            // Save full state BEFORE the deletion
+            if (!isUndoRedoOperation)
+            {
+                saveStateToUndoStack(
+                    OperationType.DELETE,
+                    deletedChar,
+                    position,
+                    currentText
+                );
+            }
 
             ClientEditRequest req = CollaborativeEditService.createDeleteRequest(
                 position, userId, documentId
@@ -316,14 +322,17 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                     onCharacterDeleted(pos);
                     if (pos >= 0 && pos < current.length() && 
                         current.startsWith(lastState.text(), pos)) {
+                        suppressInput = true;
                         editor.setValue(
                             current.substring(0, pos) + 
                             current.substring(pos + lastState.text().length())
                         );
+                        suppressInput = false;
+
                         currentCursorPosition = pos;
                     }
                     lastState = new EditorState(
-                        OperationType.DELETE,
+                        OperationType.INSERT,
                         lastState.text(),
                         pos,
                         userId,
@@ -334,14 +343,18 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 case DELETE -> {
                     int pos = lastState.position();
                     onCharacterInserted(lastState.text(), pos);
+                    suppressInput = true;
+
                     editor.setValue(
                         current.substring(0, pos) +
                         lastState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
+
                     currentCursorPosition = pos + lastState.text().length();
                     lastState = new EditorState(
-                        OperationType.INSERT,
+                        OperationType.DELETE,
                         lastState.text(),
                         pos,
                         userId,
@@ -356,18 +369,28 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                     onCharacterBatchDeleted(pos, inserted.length());
                     if (pos >= 0 && pos + inserted.length() <= current.length() && 
                         current.startsWith(inserted, pos)) {
+                        suppressInput = true;
                         editor.setValue(
                             current.substring(0, pos) + 
                             current.substring(pos + inserted.length())
                         );
+                        suppressInput = false;
                         currentCursorPosition = pos;
                     }
+                    lastState = new EditorState(
+                        OperationType.BATCH_INSERT,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case BATCH_DELETE -> {
                     int pos = lastState.position();
                     onCharacterBatchInserted(lastState.text(), pos);
-                    suppressInput = true;
                     System.out.println("length" + lastState.text().length() + " current: " + current.length() + " pos: " + pos);
+                    suppressInput = true;
                     editor.setValue(
                         current.substring(0, pos) +
                         lastState.text() +
@@ -377,7 +400,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                     System.out.println("Inserting text: " + lastState.text() + " at position: " + pos);
                     currentCursorPosition = pos + lastState.text().length();
                     lastState = new EditorState(
-                        OperationType.BATCH_INSERT,
+                        OperationType.BATCH_DELETE,
                         lastState.text(),
                         pos,
                         userId,
@@ -411,11 +434,13 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 case INSERT -> {
                     int pos = nextState.position();
                     onCharacterInserted(nextState.text(), pos);
+                    suppressInput = true;
                     editor.setValue(
                         current.substring(0, pos) +
                         nextState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
                     currentCursorPosition = pos + nextState.text().length();
                     nextState = new EditorState(
                         OperationType.DELETE,
@@ -431,10 +456,12 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                     onCharacterDeleted(pos);
                     if (pos >= 0 && pos < current.length() && 
                         current.startsWith(nextState.text(), pos)) {
+                        suppressInput = true;
                         editor.setValue(
                             current.substring(0, pos) + 
                             current.substring(pos + nextState.text().length())
                         );
+                        suppressInput = false;
                         currentCursorPosition = pos;
                     }
                     nextState = new EditorState(
@@ -446,14 +473,16 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         currentCursorPosition
                     );
                 }
-                case BATCH_INSERT -> {
+                case BATCH_DELETE -> {
                     int pos = nextState.position();
                     onCharacterBatchDeleted(pos, nextState.text().length());
+                    suppressInput = true;
                     editor.setValue(
                         current.substring(0, pos) +
                         nextState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
                     currentCursorPosition = pos + nextState.text().length();
                     nextState = new EditorState(
                         OperationType.BATCH_DELETE,
@@ -464,21 +493,23 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         currentCursorPosition
                     );
                 }
-                case BATCH_DELETE -> {
+                case BATCH_INSERT -> {
                     int pos = nextState.position();
-                    String toDelete = nextState.text();
-                    onCharacterBatchInserted(toDelete, pos);
-                    System.out.println("length" + toDelete.length() + " current: " + current.length() + " pos: " + pos);
+                    String toInsert = nextState.text();
+                    onCharacterBatchInserted(toInsert, pos);
+                    System.out.println("length" + toInsert.length() + " current: " + current.length() + " pos: " + pos);
                     if (pos >= 0 ) {
-                        System.out.println("Deleting text: " + toDelete + " at position: " + pos);
+                        System.out.println("Deleting text: " + toInsert + " at position: " + pos);
+                        suppressInput = true;
                         editor.setValue(
-                            current.substring(0, pos) + toDelete
+                            current.substring(0, pos) + toInsert
                         );
+                        suppressInput = false;
                         currentCursorPosition = pos;
                     }
                     nextState = new EditorState(
                         OperationType.BATCH_INSERT,
-                        toDelete,
+                        toInsert,
                         pos,
                         userId,
                         current,
