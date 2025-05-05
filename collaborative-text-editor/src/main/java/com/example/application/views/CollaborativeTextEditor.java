@@ -98,6 +98,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         // Editor
         editor = new TextArea();
         if(content != null) {
+            onCharacterBatchInserted(content,0);
             editor.setValue(content);
             saveStateToUndoStack(content, 0); // Save initial state
         }
