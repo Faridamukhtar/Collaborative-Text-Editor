@@ -324,6 +324,14 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         );
                         currentCursorPosition = pos;
                     }
+                    lastState = new EditorState(
+                        OperationType.DELETE,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case DELETE -> {
                     int pos = lastState.position();
@@ -334,6 +342,14 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         current.substring(pos)
                     );
                     currentCursorPosition = pos + lastState.text().length();
+                    lastState = new EditorState(
+                        OperationType.INSERT,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case BATCH_INSERT -> {
                     int pos = lastState.position();
@@ -348,16 +364,36 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         );
                         currentCursorPosition = pos;
                     }
+                    lastState = new EditorState(
+                        OperationType.BATCH_DELETE,
+                        inserted,
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case BATCH_DELETE -> {
                     int pos = lastState.position();
                     onCharacterBatchInserted(lastState.text(), pos);
+                    suppressInput = true;
+                    System.out.println("length" + lastState.text().length() + " current: " + current.length() + " pos: " + pos);
                     editor.setValue(
                         current.substring(0, pos) +
                         lastState.text() +
                         current.substring(pos)
                     );
+                    suppressInput = false;
+                    System.out.println("Inserting text: " + lastState.text() + " at position: " + pos);
                     currentCursorPosition = pos + lastState.text().length();
+                    lastState = new EditorState(
+                        OperationType.BATCH_INSERT,
+                        lastState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
             }
             
@@ -379,6 +415,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         isUndoRedoOperation = true;
         try {
             String current = editor.getValue();
+            System.out.println("Redoing operation of type: " + nextState.type());
             switch (nextState.type()) {
                 case INSERT -> {
                     int pos = nextState.position();
@@ -389,6 +426,14 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         current.substring(pos)
                     );
                     currentCursorPosition = pos + nextState.text().length();
+                    nextState = new EditorState(
+                        OperationType.DELETE,
+                        nextState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case DELETE -> {
                     int pos = nextState.position();
@@ -401,6 +446,14 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         );
                         currentCursorPosition = pos;
                     }
+                    nextState = new EditorState(
+                        OperationType.INSERT,
+                        nextState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case BATCH_INSERT -> {
                     int pos = nextState.position();
@@ -411,19 +464,35 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         current.substring(pos)
                     );
                     currentCursorPosition = pos + nextState.text().length();
+                    nextState = new EditorState(
+                        OperationType.BATCH_DELETE,
+                        nextState.text(),
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
                 case BATCH_DELETE -> {
                     int pos = nextState.position();
                     String toDelete = nextState.text();
                     onCharacterBatchInserted(toDelete, pos);
-                    if (pos >= 0 && pos + toDelete.length() <= current.length() && 
-                        current.startsWith(toDelete, pos)) {
+                    System.out.println("length" + toDelete.length() + " current: " + current.length() + " pos: " + pos);
+                    if (pos >= 0 ) {
+                        System.out.println("Deleting text: " + toDelete + " at position: " + pos);
                         editor.setValue(
-                            current.substring(0, pos) + 
-                            current.substring(pos + toDelete.length())
+                            current.substring(0, pos) + toDelete
                         );
                         currentCursorPosition = pos;
                     }
+                    nextState = new EditorState(
+                        OperationType.BATCH_INSERT,
+                        toDelete,
+                        pos,
+                        userId,
+                        current,
+                        currentCursorPosition
+                    );
                 }
             }
             
