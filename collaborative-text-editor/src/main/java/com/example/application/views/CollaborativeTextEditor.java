@@ -264,7 +264,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 editor.setValue(text);
                 saveStateToUndoStack(text, currentCursorPosition);
             }            
-            saveStateToUndoStack(text, currentCursorPosition);
             suppressInput = false;
             ui.getPage().executeJs("window.suppressInputEnd()");
         });
