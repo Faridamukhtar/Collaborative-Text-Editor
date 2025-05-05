@@ -48,10 +48,12 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     private static final Map<String, UI> activeUsers = new ConcurrentHashMap<>();
 
+
     private final Deque<EditorState> undoStack = new ArrayDeque<>(5);
     private final Deque<EditorState> redoStack = new ArrayDeque<>(5);
     private boolean isUndoRedoOperation = false;
     private int currentCursorPosition = 0;
+    private List<String> active_users;
 
     @Autowired
     private CollaborativeEditService collaborativeEditService;
@@ -162,6 +164,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private void updateCursorPosition() {
         editor.getElement().executeJs("return this.inputElement.selectionStart")
                 .then(Integer.class, (SerializableConsumer<Integer>) pos -> currentCursorPosition = pos);
+        onCursorLineChanged(currentCursorPosition);
     }
 
     private void initializeConnector() {
@@ -250,12 +253,35 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 for (int i = 0; i < users.size(); i++) {
                     usernames.add(users.get(i).getAsString());
                 }
+                active_users=usernames;
                 updateActiveUserListUI(usernames);
             } catch (Exception e) {
                 System.err.println("\u274C Failed to parse ACTIVE_USERS: " + e.getMessage());
             }
+            
             return;
         }
+        else if (text.trim().startsWith("{") && text.contains("\"type\":\"CURSOR_UPDATE\"")) {
+            System.out.println("yaraaaaaaaab");
+            System.out.println(text);
+            try {
+                JsonObject json = JsonParser.parseString(text).getAsJsonObject();
+                JsonObject cursors = json.getAsJsonObject("cursors");
+                Map<String, Integer> cursorMap = new HashMap<>();
+                System.out.printf("cursors" , cursorMap);
+        
+                for (String key : cursors.keySet()) {
+                    int pos = cursors.get(key).getAsInt();
+                    cursorMap.put(key, pos);
+                }
+        
+                updateActiveUserCursorUI(cursorMap);
+            } catch (Exception e) {
+                System.err.println("❌ Failed to parse CURSOR_UPDATE: " + e.getMessage());
+            }
+            return;
+        }
+    
 
         ui.access(() -> {
             ui.getPage().executeJs("window.suppressInputStart()");
@@ -268,6 +294,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     }
 
     private void updateActiveUserListUI(List<String> usernames) {
+        active_users = usernames;
         ui.access(() -> {
             activeUserListSection.removeAll();
             Div header = new Div("\uD83D\uDFE2 Active Users (" + usernames.size() + "):");
@@ -281,10 +308,47 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         });
     }
 
+    private void updateActiveUserCursorUI(Map<String, Integer> userCursors) {
+        ui.access(() -> {
+            // Remove old cursor elements
+            activeUserListSection.getChildren()
+                .filter(component -> "cursor".equals(component.getElement().getProperty("data-type")))
+                .forEach(activeUserListSection::remove);
+    
+            // Add new header
+            Div header = new Div("📍 Cursors:");
+            header.getElement().setProperty("data-type", "cursor");
+            header.getStyle().set("margin-top", "1rem")
+                             .set("margin-bottom", "0.5rem")
+                             .set("font-weight", "bold");
+            activeUserListSection.add(header);
+    
+            // Add each user's cursor position
+            userCursors.forEach((user, pos) -> {
+                if (active_users.contains(user)) {
+                    String label = user.equals(userId) ? user + " (you)" : user;
+                    Div userDiv = new Div("• " + label + " → Pos: " + pos);
+                    userDiv.getElement().setProperty("data-type", "cursor");
+                    userDiv.getStyle().set("margin-left", "1rem").set("color", "blue");
+                    activeUserListSection.add(userDiv);
+                }
+            });
+        });
+    }
+    
+
     private void updateExportResource(String htmlContent) {
         String plainText = helpers.htmlToPlainText(htmlContent);
         StreamResource resource = new StreamResource("document.txt",
                 () -> new ByteArrayInputStream(plainText.getBytes(StandardCharsets.UTF_8)));
         hiddenDownloadLink.setHref(resource);
     }
+
+    @ClientCallable
+    public void onCursorLineChanged(int lineNumber) {
+        System.out.printf("user ", userId , "doc " , documentId , "position", lineNumber);
+        ClientEditRequest req = CollaborativeEditService.updateUserCursorLine(lineNumber, userId, documentId);
+        collaborativeEditService.sendEditRequest(req);
+    }
+
 }

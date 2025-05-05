@@ -1,6 +1,6 @@
 package com.example.application.connections.CRDT;
 public class ClientEditRequest {
-    public enum Type { INSERT, DELETE }
+    public enum Type { INSERT, DELETE , CURSOR}
 
     public Type type;       // "INSERT" or "DELETE"
     public String value;      // for INSERT

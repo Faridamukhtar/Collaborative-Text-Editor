@@ -69,6 +69,15 @@ public class CollaborativeEditService {
         }
     }
 
+    public static ClientEditRequest updateUserCursorLine(int position, String userId, String documentId) {
+        ClientEditRequest req = new ClientEditRequest();
+        req.type = ClientEditRequest.Type.CURSOR;
+        req.position = position;
+        req.userId = userId;
+        req.documentId = documentId;
+        return req;
+    }
+
     public static ClientEditRequest createInsertRequest(String value, int position, String userId, String documentId) {
         ClientEditRequest req = new ClientEditRequest();
         req.type = ClientEditRequest.Type.INSERT;

@@ -1,7 +1,7 @@
 package com.collab.backend.websocket;
 
 public class ClientEditRequest {
-    public enum Type { INSERT, DELETE }
+    public enum Type { INSERT, DELETE , CURSOR}
 
     public Type type;         // "INSERT" or "DELETE"
     public String value;      // for INSERT
