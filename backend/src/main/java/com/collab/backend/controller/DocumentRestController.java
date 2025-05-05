@@ -39,6 +39,7 @@ public class DocumentRestController {
         var response = documentService.joinDocument(documentID);
         return "userId: " + response.get("userId") +
                 ", documentId: " + response.get("documentId") +
-                ", role: " + response.get("role");
+                ", role: " + response.get("role") +
+                ", viewCode: " + response.get("viewCode");
     }
 }
