@@ -96,7 +96,9 @@ public class StartView extends VerticalLayout {
                 if (response.startsWith("userId:")) {
                     String userId = helpers.extractData(response, "userId");
                     String role = helpers.extractData(response, "role");
-                    String viewCode = "Hidden", editCode = "Hidden";
+                    String viewCode = helpers.extractData(response, "viewCode");
+
+                    String editCode = "Hidden";
                     if ("viewer".equals(role))
                         viewCode = code;
                     else

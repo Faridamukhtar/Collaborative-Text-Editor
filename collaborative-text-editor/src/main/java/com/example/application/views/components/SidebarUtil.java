@@ -14,8 +14,8 @@ import com.vaadin.flow.component.html.DescriptionList.Term;
 
 public class SidebarUtil {
 
-
-    public static Section createSidebar(String viewCode, String editCode, String userId , Anchor hiddenDownloadLink) {
+    public static Section createSidebar(String viewCode, String editCode, String userId,
+                                        Anchor hiddenDownloadLink, Div activeUserListSection) {
         Section sidebar = new Section();
         sidebar.addClassNames(Background.CONTRAST_5, BoxSizing.BORDER, Display.FLEX, FlexDirection.COLUMN,
                 Flex.SHRINK_NONE, Overflow.AUTO, Padding.LARGE);
@@ -34,11 +34,9 @@ public class SidebarUtil {
             createBadgeItem("Edit Code", editCode)
         );
 
-        hiddenDownloadLink = new Anchor();
         hiddenDownloadLink.setId("hiddenDownloadLink");
         hiddenDownloadLink.getStyle().set("display", "none");
         hiddenDownloadLink.getElement().setAttribute("download", true);
-        sidebar.add(hiddenDownloadLink);
 
         Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
         exportButton.addClickListener(e -> {
@@ -47,10 +45,9 @@ public class SidebarUtil {
             );
         });
 
-        sidebar.add(title, exportButton, dl);
+        sidebar.add(title, exportButton, dl, hiddenDownloadLink, activeUserListSection);
         return sidebar;
     }
-
 
     public static Div createBadgeItem(String label, String value) {
         return new Div(createTerm(label), createDescription(value, "badge"));
@@ -74,5 +71,21 @@ public class SidebarUtil {
         }
         return desc;
     }
-}
 
+    public static Div createActiveUserListSection() {
+        Div container = new Div();
+        container.setId("active-users-list");
+        container.getStyle()
+                .set("margin-top", "1rem")
+                .set("font-weight", "bold")
+                .set("color", "var(--lumo-body-text-color)")
+                .set("font-size", "14px");
+
+        Div header = new Div();
+        header.setText("🟢 Active Users:");
+        header.getStyle().set("margin-bottom", "0.5rem");
+        container.add(header);
+
+        return container;
+    }
+}

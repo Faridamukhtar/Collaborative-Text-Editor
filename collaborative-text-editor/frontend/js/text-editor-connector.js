@@ -6,13 +6,17 @@ window.initEditorConnector = function (element, userId) {
     }
 
     let lastValue = textarea.value;
-    let isRemoteUpdate = false; // Flag to track server-originated updates
+    let suppressInput = false;
 
-    // Handle local edits
+    // Allow backend to suppress frontend input listeners
+    window.suppressInputStart = () => suppressInput = true;
+    window.suppressInputEnd = () => suppressInput = false;
+
     textarea.addEventListener("input", function (event) {
-        if (isRemoteUpdate) {
-            isRemoteUpdate = false;
-            return; // Skip processing for server-initiated updates
+        if (suppressInput) {
+            console.log("🔇 Suppressed input event due to backend update");
+            lastValue = textarea.value; // keep local value in sync
+            return;
         }
 
         const newValue = textarea.value;
@@ -24,50 +28,20 @@ window.initEditorConnector = function (element, userId) {
             const inserted = newValue.slice(cursorPos - insertedLength, cursorPos);
 
             if (inserted && inserted.length > 0) {
-                console.log(`[Local Insert] '${inserted}' at pos ${cursorPos - insertedLength}`);
+                console.log(`[Insert] '${inserted}' at pos ${cursorPos - insertedLength}`);
                 element.$server.onCharacterBatchInserted(inserted, cursorPos - insertedLength);
             }
         } else if (event.inputType.startsWith('delete')) {
             const deletedLength = oldValue.length - newValue.length;
             const deletePos = cursorPos;
             if (deletedLength > 0) {
-                console.log(`[Local Delete] ${deletedLength} character(s) at pos ${deletePos}`);
+                console.log(`[Delete] ${deletedLength} character(s) at pos ${deletePos}`);
                 element.$server.onCharacterBatchDeleted(deletePos, deletedLength);
             }
         }
 
         lastValue = newValue;
     });
-
-    // Handle server updates
-    element.$server.updateContent = function (newContent, cursorPosition) {
-        isRemoteUpdate = true;
-        console.log(`[Remote Update] Applying update: '${newContent}'`);
-        
-        // Save current selection
-        const prevSelectionStart = textarea.selectionStart;
-        const prevSelectionEnd = textarea.selectionEnd;
-        
-        // Apply update
-        textarea.value = newContent;
-        lastValue = newContent;
-        
-        // Restore cursor position if this isn't our own update
-        if (cursorPosition !== undefined) {
-            textarea.selectionStart = cursorPosition;
-            textarea.selectionEnd = cursorPosition;
-        } else {
-            textarea.selectionStart = prevSelectionStart;
-            textarea.selectionEnd = prevSelectionEnd;
-        }
-    };
-
-    // Handle cursor position updates from other users
-    element.$server.updateCursorPosition = function (userId, position) {
-        // Implement cursor visualization for other users
-        console.log(`[Cursor Update] User ${userId} moved to position ${position}`);
-        // You'll need to add UI elements to show other users' cursors
-    };
 
     console.log("✅ Text editor connector initialized for user:", userId);
 };
