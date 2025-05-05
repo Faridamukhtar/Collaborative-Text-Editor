@@ -101,6 +101,8 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             editor.setValue(content);
             saveStateToUndoStack(content, 0); // Save initial state
         }
+        if ("viewer".equals(role))
+            editor.setReadOnly(true);
         editor.setWidthFull();
         editor.setHeight("100%");
         editor.setLabel("Edit text below - changes are shared with all users");
