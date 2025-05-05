@@ -630,7 +630,8 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 removeComment(commentId);
             } catch (Exception e) {
                 System.err.println("❌ Failed to parse commentDeleted: " + e.getMessage());
-
+            }
+        }
         else if (text.trim().startsWith("{") && text.contains("\"type\":\"CURSOR_UPDATE\"")) {
             System.out.println(text);
             try {
