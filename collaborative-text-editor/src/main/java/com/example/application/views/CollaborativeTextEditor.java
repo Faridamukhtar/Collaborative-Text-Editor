@@ -24,16 +24,30 @@ import com.vaadin.flow.router.HasUrlParameter;
 import com.vaadin.flow.router.Route;
 import com.vaadin.flow.server.StreamResource;
 import com.vaadin.flow.server.VaadinSession;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.beans.factory.annotation.Autowired;
+
 @Route("/editor")
 @JsModule("./js/text-editor-connector.js")
 public class CollaborativeTextEditor extends VerticalLayout implements CollaborativeEditUiListener, HasUrlParameter<String> {
+
+    private enum OperationType {
+        INSERT, DELETE, BATCH_INSERT, BATCH_DELETE
+    }
+
+    private record EditorState(
+        OperationType type,
+        String text,
+        int position,
+        String userId,
+        String fullContent,
+        int cursorPosition
+    ) {}
 
     private UI ui;
     private TextArea editor;
@@ -47,16 +61,13 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private Div activeUserListSection = SidebarUtil.createActiveUserListSection();
 
     private static final Map<String, UI> activeUsers = new ConcurrentHashMap<>();
-
-    private final Deque<EditorState> undoStack = new ArrayDeque<>(5);
-    private final Deque<EditorState> redoStack = new ArrayDeque<>(5);
+    private final Deque<EditorState> undoStack = new ArrayDeque<>();
+    private final Deque<EditorState> redoStack = new ArrayDeque<>();
     private boolean isUndoRedoOperation = false;
     private int currentCursorPosition = 0;
 
     @Autowired
     private CollaborativeEditService collaborativeEditService;
-
-    private record EditorState(String content, int cursorPosition) {}
 
     public CollaborativeTextEditor() {
         setSizeFull();
@@ -94,9 +105,8 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
         editor = new TextArea();
         if (content != null) {
-            onCharacterBatchInserted(content, 0);
             editor.setValue(content);
-            saveStateToUndoStack(content, 0);
+            saveInitialState(content);
         }
         if ("viewer".equals(role) || (!viewCode.isEmpty() && editCode.isEmpty()))
             editor.setReadOnly(true);
@@ -106,10 +116,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
         editor.addValueChangeListener(event -> {
             if (!suppressInput && !isUndoRedoOperation) {
-                if (undoStack.isEmpty() || !undoStack.peek().content().equals(event.getValue())) {
-                    saveStateToUndoStack(event.getValue(), currentCursorPosition);
-                    redoStack.clear();
-                }
                 updateExportResource(event.getValue());
             }
         });
@@ -159,6 +165,17 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         initializeConnector();
     }
 
+    private void saveInitialState(String content) {
+        undoStack.push(new EditorState(
+            OperationType.INSERT,
+            content,
+            0,
+            userId,
+            content,
+            0
+        ));
+    }
+
     private void updateCursorPosition() {
         editor.getElement().executeJs("return this.inputElement.selectionStart")
                 .then(Integer.class, (SerializableConsumer<Integer>) pos -> currentCursorPosition = pos);
@@ -168,75 +185,241 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         getElement().executeJs("window.initEditorConnector($0, $1)", getElement(), userId);
     }
 
-    private void saveStateToUndoStack(String content, int cursorPosition) {
-        if (undoStack.size() >= 5) undoStack.removeFirst();
-        undoStack.push(new EditorState(content, cursorPosition));
-    }
-
-    private void saveStateToRedoStack(String content, int cursorPosition) {
-        if (redoStack.size() >= 5) redoStack.removeFirst();
-        redoStack.push(new EditorState(content, cursorPosition));
-    }
-
-    private void undo() {
-        if (undoStack.size() > 1) {
-            saveStateToRedoStack(editor.getValue(), currentCursorPosition);
-            undoStack.pop();
-            applyState(undoStack.peek());
-        }
-    }
-
-    private void redo() {
-        if (!redoStack.isEmpty()) {
-            saveStateToUndoStack(editor.getValue(), currentCursorPosition);
-            applyState(redoStack.pop());
-        }
-    }
-
-    private void applyState(EditorState state) {
-        isUndoRedoOperation = true;
-        suppressInput = true;
-        ui.access(() -> {
-            try {
-                editor.setValue(state.content());
-                ui.getPage().executeJs(
-                        "setTimeout(() => { const el = $0.inputElement; el.selectionStart = $1; el.selectionEnd = $1; }, 10)",
-                        editor.getElement(), state.cursorPosition());
-                currentCursorPosition = state.cursorPosition();
-            } finally {
-                suppressInput = false;
-                isUndoRedoOperation = false;
-            }
-        });
-    }
-
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
         if (suppressInput) return;
-        ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId, documentId);
+        
+        saveStateToUndoStack(
+            OperationType.INSERT,
+            character,
+            position,
+            editor.getValue()
+        );
+        
+        ClientEditRequest req = CollaborativeEditService.createInsertRequest(
+            character, position, userId, documentId
+        );
         collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
         if (suppressInput) return;
-        ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId, documentId);
-        collaborativeEditService.sendEditRequest(req);
+
+        // 👇 Capture the editor content BEFORE deletion happens
+        String currentText = editor.getValue();
+        
+        if (position >= 0 && position < currentText.length()) {
+            String deletedChar = currentText.substring(position, position + 1);
+
+            // Save full state BEFORE the deletion
+            saveStateToUndoStack(
+                OperationType.DELETE,
+                deletedChar,
+                position,
+                currentText
+            );
+
+            // Now send deletion request
+            ClientEditRequest req = CollaborativeEditService.createDeleteRequest(
+                position, userId, documentId
+            );
+            collaborativeEditService.sendEditRequest(req);
+        }
     }
+
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
-        if (suppressInput) return;
+        if (suppressInput || text.isEmpty()) return;
+        
+        saveStateToUndoStack(
+            OperationType.BATCH_INSERT,
+            text,
+            position,
+            editor.getValue()
+        );
+        
         for (int i = 0; i < text.length(); i++) {
-            onCharacterInserted(String.valueOf(text.charAt(i)), position + i);
+            ClientEditRequest req = CollaborativeEditService.createInsertRequest(
+                String.valueOf(text.charAt(i)), 
+                position + i, 
+                userId, 
+                documentId
+            );
+            collaborativeEditService.sendEditRequest(req);
         }
     }
 
     @ClientCallable
     public void onCharacterBatchDeleted(int startPosition, int count) {
-        if (suppressInput) return;
-        for (int i = 0; i < count; i++) {
-            onCharacterDeleted(startPosition);
+        if (suppressInput || count <= 0) return;
+
+        String currentText = editor.getValue();
+        if (startPosition >= 0 && startPosition + count <= currentText.length()) {
+            String deletedText = currentText.substring(startPosition, startPosition + count);
+
+            saveStateToUndoStack(
+                OperationType.BATCH_DELETE,
+                deletedText,
+                startPosition,
+                currentText
+            );
+
+            for (int i = 0; i < count; i++) {
+                ClientEditRequest req = CollaborativeEditService.createDeleteRequest(
+                    startPosition, userId, documentId
+                );
+                collaborativeEditService.sendEditRequest(req);
+            }
+        }
+    }
+
+    private void saveStateToUndoStack(OperationType type, String text, int position, String fullContent) {
+        EditorState state = new EditorState(
+            type,
+            text,
+            position,
+            userId,
+            fullContent,
+            currentCursorPosition
+        );
+        undoStack.push(state);
+        redoStack.clear();
+    }
+
+    private void undo() {
+        if (undoStack.isEmpty()) return;
+        
+        EditorState lastState = undoStack.pop();
+        
+        if (!userId.equals(lastState.userId())) {
+            undo();
+            return;
+        }
+        
+        suppressInput = true;
+        isUndoRedoOperation = true;
+        try {
+            String current = editor.getValue();
+            switch (lastState.type()) {
+                case INSERT -> {
+                    int pos = lastState.position();
+                    if (pos >= 0 && pos < current.length() && 
+                        current.startsWith(lastState.text(), pos)) {
+                        editor.setValue(
+                            current.substring(0, pos) + 
+                            current.substring(pos + lastState.text().length())
+                        );
+                        currentCursorPosition = pos;
+                    }
+                }
+                case DELETE -> {
+                    int pos = lastState.position();
+                    editor.setValue(
+                        current.substring(0, pos) +
+                        lastState.text() +
+                        current.substring(pos)
+                    );
+                    currentCursorPosition = pos + lastState.text().length();
+                }
+                case BATCH_INSERT -> {
+                    int pos = lastState.position();
+                    String inserted = lastState.text();
+                    if (pos >= 0 && pos + inserted.length() <= current.length() && 
+                        current.startsWith(inserted, pos)) {
+                        editor.setValue(
+                            current.substring(0, pos) + 
+                            current.substring(pos + inserted.length())
+                        );
+                        currentCursorPosition = pos;
+                    }
+                }
+                case BATCH_DELETE -> {
+                    int pos = lastState.position();
+                    editor.setValue(
+                        current.substring(0, pos) +
+                        lastState.text() +
+                        current.substring(pos)
+                    );
+                    currentCursorPosition = pos + lastState.text().length();
+                }
+            }
+            
+            ui.getPage().executeJs(
+                "setTimeout(() => { const el = $0.inputElement; el.selectionStart = $1; el.selectionEnd = $1; }, 10)",
+                editor.getElement(), currentCursorPosition
+            );
+            
+            redoStack.push(lastState);
+        } finally {
+            suppressInput = false;
+            isUndoRedoOperation = false;
+        }
+    }
+
+    private void redo() {
+        if (redoStack.isEmpty()) return;
+        
+        EditorState nextState = redoStack.pop();
+        
+        suppressInput = true;
+        isUndoRedoOperation = true;
+        try {
+            String current = editor.getValue();
+            switch (nextState.type()) {
+                case INSERT -> {
+                    int pos = nextState.position();
+                    editor.setValue(
+                        current.substring(0, pos) +
+                        nextState.text() +
+                        current.substring(pos)
+                    );
+                    currentCursorPosition = pos + nextState.text().length();
+                }
+                case DELETE -> {
+                    int pos = nextState.position();
+                    if (pos >= 0 && pos < current.length() && 
+                        current.startsWith(nextState.text(), pos)) {
+                        editor.setValue(
+                            current.substring(0, pos) + 
+                            current.substring(pos + nextState.text().length())
+                        );
+                        currentCursorPosition = pos;
+                    }
+                }
+                case BATCH_INSERT -> {
+                    int pos = nextState.position();
+                    editor.setValue(
+                        current.substring(0, pos) +
+                        nextState.text() +
+                        current.substring(pos)
+                    );
+                    currentCursorPosition = pos + nextState.text().length();
+                }
+                case BATCH_DELETE -> {
+                    int pos = nextState.position();
+                    String toDelete = nextState.text();
+                    if (pos >= 0 && pos + toDelete.length() <= current.length() && 
+                        current.startsWith(toDelete, pos)) {
+                        editor.setValue(
+                            current.substring(0, pos) + 
+                            current.substring(pos + toDelete.length())
+                        );
+                        currentCursorPosition = pos;
+                    }
+                }
+            }
+            
+            ui.getPage().executeJs(
+                "setTimeout(() => { const el = $0.inputElement; el.selectionStart = $1; el.selectionEnd = $1; }, 10)",
+                editor.getElement(), currentCursorPosition
+            );
+            
+            undoStack.push(nextState);
+        } finally {
+            suppressInput = false;
+            isUndoRedoOperation = false;
         }
     }
 
@@ -261,7 +444,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             ui.getPage().executeJs("window.suppressInputStart()");
             suppressInput = true;
             editor.setValue(text);
-            saveStateToUndoStack(text, currentCursorPosition);
             suppressInput = false;
             ui.getPage().executeJs("window.suppressInputEnd()");
         });
