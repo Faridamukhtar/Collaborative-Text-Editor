@@ -10,11 +10,13 @@ import com.vaadin.flow.component.ClientCallable;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.dependency.JsModule;
+import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
 import com.vaadin.flow.component.html.Section;
 import com.vaadin.flow.component.icon.VaadinIcon;
+import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.textfield.TextArea;
@@ -137,7 +139,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         redoButton.addClickListener(e -> redo());
         Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
         exportButton.addClickListener(e -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
+        Button commentButton = new Button("Comment", VaadinIcon.COMMENT.create());
+        commentButton.addClickListener(e -> openCommentDialog());
 
+        editorToolbar.add(commentButton);
         editorToolbar.add(undoButton, redoButton);
         editorToolbar.addAndExpand(new Div());
         editorToolbar.add(exportButton);
@@ -358,6 +363,36 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         }
     }
 
+    private void openCommentDialog() {
+        editor.getElement().executeJs("return [this.inputElement.selectionStart, this.inputElement.selectionEnd]")
+            .then(JsonArray.class, result -> {
+                int start = result.get(0).getAsInt();
+                int end = result.get(1).getAsInt();
+
+                if (start == end) {
+                    Notification.show("Please select text to comment on.", 3000, Notification.Position.MIDDLE);
+                    return;
+                }
+
+                Dialog dialog = new Dialog();
+                TextArea input = new TextArea("Comment");
+                input.setWidthFull();
+
+                Button submit = new Button("Add", ev -> {
+                    dialog.close();
+                    String commentId = UUID.randomUUID().toString();
+                    sendAddComment(commentId, input.getValue(), start, end);
+                });
+
+                dialog.add(input, submit);
+                dialog.open();
+            });
+    }
+
+    private void sendAddComment(String commentId, String text, int start, int end) {
+        CollaborativeEditService.createAddCommentRequest(commentId, start, end, text);
+    }
+    
     private void redo() {
         if (redoStack.isEmpty()) return;
         

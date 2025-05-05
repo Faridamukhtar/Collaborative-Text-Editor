@@ -1,6 +1,7 @@
 package com.collab.backend.websocket;
 
 import com.collab.backend.crdt.*;
+import com.collab.backend.models.CommentModel;
 import com.collab.backend.models.DocumentModel;
 import com.collab.backend.models.UserModel;
 import com.collab.backend.service.DocumentService;
@@ -106,16 +107,56 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         }
         String docId = req.getDocumentId();
         String userId = req.getUserId();
-
         DocumentModel doc = documentService.getDocumentById(docId);
         if (doc == null) {
             System.err.println("Received edit for non-existent document: " + docId);
             return;
         }
 
+        // ✅ Handle new comment addition
+        if (req.getType() == ClientEditRequest.Type.ADD_COMMENT) {
+            CommentModel comment = new CommentModel(
+                req.getCommentId(),
+                req.getValue(),
+                req.getPosition(),
+                req.getEndPosition()
+            );
+
+            doc.addComment(comment);
+
+            String responseJson = String.format(
+                "{\"type\":\"commentAdded\",\"commentId\":\"%s\",\"userId\":\"%s\",\"text\":\"%s\",\"startIndex\":%d,\"endIndex\":%d}",
+                req.getCommentId(), req.getUserId(), req.getValue(), req.getPosition(), req.getEndPosition()
+            );
+            TextMessage broadcastMsg = new TextMessage(responseJson);
+
+            for (WebSocketSession s : documentSessions.get(docId)) {
+                if (s.isOpen()) s.sendMessage(broadcastMsg);
+            }
+            return;
+        }
+
+        // ✅ Handle comment deletion 
+        if (req.getType() == ClientEditRequest.Type.DELETE_COMMENT) {
+            doc.removeCommentById(req.getCommentId());
+
+            String deleteMsgJson = String.format(
+                "{\"type\":\"commentDeleted\",\"commentId\":\"%s\"}",
+                req.getCommentId()
+            );
+            TextMessage deleteMsg = new TextMessage(deleteMsgJson);
+
+            for (WebSocketSession s : documentSessions.get(docId)) {
+                if (s.isOpen()) s.sendMessage(deleteMsg);
+            }
+            return;
+        }
+
+        // ✅ Standard CRDT operation
         CrdtTree tree = doc.getCrdtTree();
         tree.apply(req);
 
+        // ✅ Broadcast updated content
         String updatedText = tree.getText();
         System.out.println("Updated text: " + updatedText);
         Set<WebSocketSession> sessions = documentSessions.get(docId);
