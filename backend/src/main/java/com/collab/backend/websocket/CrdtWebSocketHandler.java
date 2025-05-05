@@ -9,6 +9,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.socket.CloseStatus;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,7 +18,11 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
-    private final CrdtTree crdtTree = new CrdtTree(); // TODO: remove to doc initialization AND HANDLE MULTIPLE DOCS
+
+    // Map: documentId -> CRDT tree
+    private final Map<String, CrdtTree> documentTrees = new ConcurrentHashMap<>();
+    // Map: documentId -> sessions for that document
+    private final Map<String, Set<WebSocketSession>> documentSessions = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
