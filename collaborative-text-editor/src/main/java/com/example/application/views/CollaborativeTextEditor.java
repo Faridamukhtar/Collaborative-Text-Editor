@@ -8,6 +8,7 @@ import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.html.Anchor;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.html.H2;
+import com.vaadin.flow.component.html.H3;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
@@ -37,11 +38,11 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private TextArea editor;
     private String userId;
     private boolean suppressInput = false;
-    private String documentId;
     private String viewCode;
     private String editCode;
     private String role;
     private Anchor hiddenDownloadLink;
+    private VerticalLayout usersList;
     private static final ConcurrentHashMap<String, UI> activeUsers = new ConcurrentHashMap<>();
 
     // Undo/Redo functionality
@@ -64,7 +65,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     public void setParameter(BeforeEvent event, String parameter) {
         userId = helpers.extractData(parameter, "userId");
         role = helpers.extractData(parameter, "role");
-        documentId = helpers.extractData(parameter, "documentId");
         viewCode = helpers.extractData(parameter, "viewCode");
         editCode = helpers.extractData(parameter, "editCode");
         
@@ -73,14 +73,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     }
 
     private void initializeEditorUi() {
-        collaborativeEditService.connectWebSocket(documentId);
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
 
         // Register this user
         activeUsers.put(userId, ui);
-    
-        // Clean up on UI detach
-        ui.addDetachListener(event -> activeUsers.remove(userId));
     
         // Set up the layout
         setSizeFull();
@@ -180,9 +176,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         sidebarLayout.addClassNames("sidebar");
         sidebarLayout.add(
             SidebarUtil.createItem("Owner", userId),
-            SidebarUtil.createBadgeItem("Document ID", documentId),
             SidebarUtil.createBadgeItem("View Code", viewCode),
             SidebarUtil.createBadgeItem("Edit Code", editCode),
+            usersTitle,
+            usersList,
             hiddenDownloadLink,
             connectionStatus
         );
@@ -293,6 +290,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
+        System.out.println("onCharacterBatchInserted: " + text + " at position: " + position);
         if (suppressInput) return;
         for (int i = 0; i < text.length(); i++) {
             String ch = String.valueOf(text.charAt(i));
