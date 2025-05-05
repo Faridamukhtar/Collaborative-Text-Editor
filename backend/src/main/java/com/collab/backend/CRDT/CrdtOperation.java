@@ -1,4 +1,4 @@
-package com.collab.backend.CRDT;
+package com.collab.backend.crdt;
 
 import java.util.List;
 import com.collab.backend.websocket.ClientEditRequest;

@@ -1,6 +1,6 @@
 package com.collab.backend.websocket;
 
-import com.collab.backend.CRDT.*;
+import com.collab.backend.crdt.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
@@ -58,14 +58,19 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         documentSessions.computeIfAbsent(docId, k -> ConcurrentHashMap.newKeySet()).add(session);
 
         CrdtTree tree = documentTrees.get(docId);
-        tree.apply(clientEditRequest); // Assumes CrdtTree can apply a ClientEditRequest
+        tree.apply(clientEditRequest);
 
-        // Broadcast updated text to other sessions in the same document
+        // Broadcast updated text to other sessions in the same document (EXCLUDING sender)
         String updatedText = objectMapper.writeValueAsString(tree.getText());
-        for (WebSocketSession s : documentSessions.get(docId)) {
-            System.out.println("Sending message to session: " + s.getId());
-            System.out.println(updatedText);
-            s.sendMessage(new TextMessage(updatedText));
+        Set<WebSocketSession> docSessions = documentSessions.get(docId);
+        
+        if (docSessions != null) {
+            for (WebSocketSession s : docSessions) {
+                if (!s.getId().equals(session.getId())) {  // Critical: Skip the sender
+                    System.out.println("Sending message to session: " + s.getId());
+                    s.sendMessage(new TextMessage(updatedText));
+                }
+            }
         }
     }
 

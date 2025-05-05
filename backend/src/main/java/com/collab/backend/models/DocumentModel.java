@@ -1,6 +1,6 @@
 package com.collab.backend.models;
 
-import com.collab.backend.CRDT.CrdtTree;
+import com.collab.backend.crdt.CrdtTree;
 
 import java.util.HashMap;
 import java.util.Map;
