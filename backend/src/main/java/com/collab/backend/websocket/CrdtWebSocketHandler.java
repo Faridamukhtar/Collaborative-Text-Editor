@@ -96,7 +96,12 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
+        System.out.println("Received message: " + message.getPayload());
         ClientEditRequest req = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
+        if (req.getType() == null) {
+            System.err.println("Invalid message type: " + req.getType());
+            return;
+        }
         String docId = req.getDocumentId();
         String userId = req.getUserId();
 
@@ -109,13 +114,17 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         CrdtTree tree = doc.getCrdtTree();
         tree.apply(req);
 
-        String updatedText = objectMapper.writeValueAsString(tree.getText());
+        String updatedText = tree.getText();
         Set<WebSocketSession> sessions = documentSessions.get(docId);
 
-        if (sessions != null) {
-            for (WebSocketSession s : sessions) {
-                if (s.isOpen()) {
-                    s.sendMessage(new TextMessage(updatedText));
+        TextMessage messageSent = new TextMessage(updatedText);
+        System.out.println("Sending updated text" + messageSent + "to " + sessions.size() + " sessions");
+        for (WebSocketSession s : sessions) {
+            if (s.isOpen() && !s.equals(session)) {
+                try {
+                    s.sendMessage(messageSent);
+                } catch (IOException e) {
+                    System.err.println("❌ Error sending raw text: " + e.getMessage());
                 }
             }
         }

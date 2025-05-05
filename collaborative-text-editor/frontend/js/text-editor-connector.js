@@ -6,8 +6,19 @@ window.initEditorConnector = function (element, userId) {
     }
 
     let lastValue = textarea.value;
+    let suppressInput = false;
+
+    // Allow backend to suppress frontend input listeners
+    window.suppressInputStart = () => suppressInput = true;
+    window.suppressInputEnd = () => suppressInput = false;
 
     textarea.addEventListener("input", function (event) {
+        if (suppressInput) {
+            console.log("🔇 Suppressed input event due to backend update");
+            lastValue = textarea.value; // keep local value in sync
+            return;
+        }
+
         const newValue = textarea.value;
         const cursorPos = textarea.selectionStart;
         const oldValue = lastValue;
