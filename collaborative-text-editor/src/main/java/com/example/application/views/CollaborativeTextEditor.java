@@ -392,6 +392,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private void sendAddComment(String commentId, String text, int start, int end) {
         CollaborativeEditService.createAddCommentRequest(commentId, start, end, text);
     }
+
+    private void sendDeleteComment(String commentId, String text, int start, int end) {
+        CollaborativeEditService.createDeleteCommentRequest(commentId, start, end, text);
+    }
     
     private void redo() {
         if (redoStack.isEmpty()) return;
