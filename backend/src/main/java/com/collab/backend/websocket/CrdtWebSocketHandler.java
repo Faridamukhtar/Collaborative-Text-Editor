@@ -4,6 +4,7 @@ import com.collab.backend.crdt.*;
 import com.collab.backend.models.DocumentModel;
 import com.collab.backend.models.UserModel;
 import com.collab.backend.service.DocumentService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -69,10 +70,10 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         System.out.println("WebSocket closed: " + session.getId());
-
+    
         String documentId = sessionToDocumentId.remove(session);
         String userId = sessionToUserId.remove(session);
-
+    
         if (documentId != null) {
             Set<WebSocketSession> sessions = documentSessions.get(documentId);
             if (sessions != null) {
@@ -81,7 +82,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
                     documentSessions.remove(documentId);
                 }
             }
-
+    
             DocumentModel doc = documentService.getDocumentById(documentId);
             if (doc != null && userId != null) {
                 doc.getUsers().remove(userId); // Optional: auto-remove user on disconnect
@@ -92,43 +93,79 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
                 }
             }
         }
+    
+        // ✅ Reconnection logic (non-intrusive addition)
+        if (userId != null) {
+            ReconnectionManager.markReconnecting(userId);
+            System.out.println("User " + userId + " marked as reconnecting.");
+        }
+    }
+    
+@Override
+protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
+    System.out.println("Received message: " + message.getPayload());
+
+    JsonNode root = objectMapper.readTree(message.getPayload());
+    String type = root.has("type") ? root.get("type").asText() : null;
+
+    if ("reconnectRequest".equals(type)) {
+        String userId = root.get("userId").asText();
+
+        if (ReconnectionManager.isInWindow(userId)) {
+            List<ClientEditRequest> missed = ReconnectionManager.getMissedOperations(userId);
+
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("type", "missedOperations");
+            msg.put("operations", missed);
+
+            String json = objectMapper.writeValueAsString(msg);
+            session.sendMessage(new TextMessage(json));
+
+            ReconnectionManager.clear(userId);
+            System.out.println("✅ Reconnected: Sent missed operations to user " + userId);
+        } else {
+            session.sendMessage(new TextMessage("{\"type\":\"reconnectFailed\"}"));
+            System.out.println("❌ Reconnection expired for user " + userId);
+        }
+
+        return;
     }
 
-    @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
-        System.out.println("Received message: " + message.getPayload());
-        ClientEditRequest req = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
-        if (req.getType() == null) {
-            System.err.println("Invalid message type: " + req.getType());
-            return;
-        }
-        String docId = req.getDocumentId();
-        String userId = req.getUserId();
+    ClientEditRequest req = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
+    if (req.getType() == null) {
+        System.err.println("Invalid message type: " + req.getType());
+        return;
+    }
+    String docId = req.getDocumentId();
+    String userId = req.getUserId();
 
-        DocumentModel doc = documentService.getDocumentById(docId);
-        if (doc == null) {
-            System.err.println("Received edit for non-existent document: " + docId);
-            return;
-        }
+    DocumentModel doc = documentService.getDocumentById(docId);
+    if (doc == null) {
+        System.err.println("Received edit for non-existent document: " + docId);
+        return;
+    }
 
-        CrdtTree tree = doc.getCrdtTree();
-        tree.apply(req);
+    CrdtTree tree = doc.getCrdtTree();
+    tree.apply(req);
 
-        String updatedText = tree.getText();
-        Set<WebSocketSession> sessions = documentSessions.get(docId);
+    String updatedText = tree.getText();
+    Set<WebSocketSession> sessions = documentSessions.get(docId);
 
-        TextMessage messageSent = new TextMessage(updatedText);
-        System.out.println("Sending updated text" + messageSent + "to " + sessions.size() + " sessions");
-        for (WebSocketSession s : sessions) {
-            if (s.isOpen() && !s.equals(session)) {
-                try {
-                    s.sendMessage(messageSent);
-                } catch (IOException e) {
-                    System.err.println("❌ Error sending raw text: " + e.getMessage());
-                }
+    TextMessage messageSent = new TextMessage(updatedText);
+    System.out.println("Sending updated text" + messageSent + "to " + sessions.size() + " sessions");
+    for (WebSocketSession s : sessions) {
+        if (s.isOpen() && !s.equals(session)) {
+            try {
+                s.sendMessage(messageSent);
+            } catch (IOException e) {
+                System.err.println("❌ Error sending raw text: " + e.getMessage());
             }
+        } else if (!s.equals(session)) {
+            System.out.println("❌ Session closed, saving missed operation for user: " + sessionToUserId.get(s));
+            ReconnectionManager.saveMissedOperation(sessionToUserId.get(s), req);
         }
     }
+}
 
     private void sendUserList(DocumentModel doc, Set<WebSocketSession> sessions) throws IOException {
         if (sessions == null) return;
@@ -160,4 +197,5 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
         }
         return null;
     }
+    
 }
