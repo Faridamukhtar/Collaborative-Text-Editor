@@ -260,7 +260,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         ui.access(() -> {
             ui.getPage().executeJs("window.suppressInputStart()");
             suppressInput = true;
-            editor.setValue(text);
+            if (!text.contains("\"type\":\"reconnectFailed\"") && !text.contains("\"type\":\"missedOperations\"")) {
+                editor.setValue(text);
+                saveStateToUndoStack(text, currentCursorPosition);
+            }            
             saveStateToUndoStack(text, currentCursorPosition);
             suppressInput = false;
             ui.getPage().executeJs("window.suppressInputEnd()");
