@@ -4,7 +4,7 @@ import java.util.List;
 import com.collab.backend.websocket.ClientEditRequest;
 
 public class CrdtOperation {
-    public enum Type { INSERT, DELETE }
+    public enum Type { INSERT, DELETE , CURSOR }
 
     public Type type;
     public String id;
