@@ -44,7 +44,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private Anchor hiddenDownloadLink;
     private static final ConcurrentHashMap<String, UI> activeUsers = new ConcurrentHashMap<>();
 
-    // Undo/Redo functionality
     private final Deque<EditorState> undoStack = new ArrayDeque<>(5);
     private final Deque<EditorState> redoStack = new ArrayDeque<>(5);
     private boolean isUndoRedoOperation = false;
@@ -53,7 +52,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     @Autowired
     private CollaborativeEditService collaborativeEditService;
 
-    // Record to store editor state
     private record EditorState(String content, int cursorPosition) {}
 
     public CollaborativeTextEditor() {
@@ -67,7 +65,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         documentId = helpers.extractData(parameter, "documentId");
         viewCode = helpers.extractData(parameter, "viewCode");
         editCode = helpers.extractData(parameter, "editCode");
-        
+
         this.ui = UI.getCurrent();
         initializeEditorUi();
     }
@@ -76,43 +74,32 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         collaborativeEditService.connectWebSocket(documentId);
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
 
-        // Register this user
         activeUsers.put(userId, ui);
-    
-        // Clean up on UI detach
         ui.addDetachListener(event -> activeUsers.remove(userId));
-    
-        // Set up the layout
+
         setSizeFull();
         setPadding(true);
         setSpacing(true);
-    
-        // Header
+
         H2 title = new H2("Live Collaborative Editor");
-        title.addClassName("header");
-    
-        // Create a Div for the header and set padding
         Div header = new Div(title);
         header.getStyle().set("text-align", "left");
-    
-        // Editor
+
         editor = new TextArea();
-        if(content != null) {
+        if (content != null) {
             editor.setValue(content);
-            saveStateToUndoStack(content, 0); // Save initial state
+            saveStateToUndoStack(content, 0);
         }
         editor.setWidthFull();
         editor.setHeight("100%");
         editor.setLabel("Edit text below - changes are shared with all users");
 
         if (!viewCode.isEmpty() && editCode.isEmpty()) {
-            editor.setReadOnly(true); 
-        }  
-    
-        // Modified value change listener
+            editor.setReadOnly(true);
+        }
+
         editor.addValueChangeListener(event -> {
             if (!suppressInput && !isUndoRedoOperation) {
-                // Only save state if content actually changed
                 if (undoStack.isEmpty() || !undoStack.peek().content().equals(event.getValue())) {
                     saveStateToUndoStack(event.getValue(), currentCursorPosition);
                     redoStack.clear();
@@ -121,47 +108,35 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             }
         });
 
-        // Track cursor position
         editor.getElement().addEventListener("keyup", e -> updateCursorPosition());
         editor.getElement().addEventListener("click", e -> updateCursorPosition());
-    
-        // Create editor toolbar
+
         HorizontalLayout editorToolbar = new HorizontalLayout();
         editorToolbar.setWidthFull();
         editorToolbar.setPadding(true);
         editorToolbar.setSpacing(true);
-        editorToolbar.getStyle()
-            .set("border-bottom", "1px solid var(--lumo-contrast-10pct)")
-            .set("background-color", "var(--lumo-contrast-5pct)");
+        editorToolbar.getStyle().set("border-bottom", "1px solid var(--lumo-contrast-10pct)").set("background-color", "var(--lumo-contrast-5pct)");
 
-        // Undo/Redo buttons
         Button undoButton = new Button("Undo", VaadinIcon.ARROW_BACKWARD.create());
         undoButton.addClickListener(e -> undo());
-        undoButton.setEnabled(!undoStack.isEmpty());
 
         Button redoButton = new Button("Redo", VaadinIcon.ARROW_FORWARD.create());
         redoButton.addClickListener(e -> redo());
-        redoButton.setEnabled(!redoStack.isEmpty());
 
-        // Export button
         Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
-        exportButton.addClickListener(e -> 
-            UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();")
-        );
+        exportButton.addClickListener(e -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
 
-        // Add buttons to toolbar with spacer
         editorToolbar.add(undoButton, redoButton);
-        editorToolbar.addAndExpand(new Div()); // Spacer pushes export to right
+        editorToolbar.addAndExpand(new Div());
         editorToolbar.add(exportButton);
 
-        // Create editor container
         VerticalLayout editorContainer = new VerticalLayout();
         editorContainer.setSizeFull();
         editorContainer.setPadding(false);
         editorContainer.setSpacing(false);
         editorContainer.add(editorToolbar, editor);
         editorContainer.setFlexGrow(1, editor);
-    
+
         hiddenDownloadLink = new Anchor();
         hiddenDownloadLink.setId("hiddenDownloadLink");
         hiddenDownloadLink.getStyle().set("display", "none");
@@ -171,12 +146,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         Div connectionStatus = new Div();
         connectionStatus.setText("Connected Users: " + activeUsers.size());
         connectionStatus.getStyle().set("color", "black");
-    
+
         VerticalLayout sidebarLayout = new VerticalLayout();
         sidebarLayout.setWidth("300px");
-        sidebarLayout.getStyle()
-            .set("background-color", "#f5f5f5")
-            .set("padding", "1rem");
+        sidebarLayout.getStyle().set("background-color", "#f5f5f5").set("padding", "1rem");
         sidebarLayout.addClassNames("sidebar");
         sidebarLayout.add(
             SidebarUtil.createItem("Owner", userId),
@@ -186,111 +159,116 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             hiddenDownloadLink,
             connectionStatus
         );
-    
+
         HorizontalLayout mainLayout = new HorizontalLayout(editorContainer, sidebarLayout);
         mainLayout.setSizeFull();
         mainLayout.setFlexGrow(3, editorContainer);
         mainLayout.setFlexGrow(1, sidebarLayout);
-    
+
         add(mainLayout);
-    
+
         initializeConnector();
     }
 
     private void updateCursorPosition() {
         editor.getElement().executeJs("return this.inputElement.selectionStart")
-            .then(Integer.class, (SerializableConsumer<Integer>) pos -> {
-                currentCursorPosition = pos;
-            });
+            .then(Integer.class, (SerializableConsumer<Integer>) pos -> currentCursorPosition = pos);
     }
-    
+
     private void initializeConnector() {
         getElement().executeJs("window.initEditorConnector($0, $1)", getElement(), userId);
     }
 
     private void saveStateToUndoStack(String content, int cursorPosition) {
-        if (undoStack.size() >= 5) {
-            undoStack.removeFirst();
-        }
+        if (undoStack.size() >= 5) undoStack.removeFirst();
         undoStack.push(new EditorState(content, cursorPosition));
     }
 
     private void saveStateToRedoStack(String content, int cursorPosition) {
-        if (redoStack.size() >= 5) {
-            redoStack.removeFirst();
-        }
+        if (redoStack.size() >= 5) redoStack.removeFirst();
         redoStack.push(new EditorState(content, cursorPosition));
     }
 
     private void undo() {
         if (undoStack.size() > 1) {
-            // Save current state to redo stack
             saveStateToRedoStack(editor.getValue(), currentCursorPosition);
-            
-            // Remove current state from undo stack
             undoStack.pop();
-            
-            // Get and apply previous state
-            EditorState previousState = undoStack.peek();
-            applyState(previousState);
+            applyState(undoStack.peek());
         }
     }
-    
+
     private void redo() {
         if (!redoStack.isEmpty()) {
-            // Save current state back to undo stack
             saveStateToUndoStack(editor.getValue(), currentCursorPosition);
-            
-            // Get and apply next state from redo stack
-            EditorState nextState = redoStack.pop();
-            applyState(nextState);
+            applyState(redoStack.pop());
         }
     }
-    
+
     private void applyState(EditorState state) {
         isUndoRedoOperation = true;
         suppressInput = true;
-        
         ui.access(() -> {
-            try {
-                String currentValue = editor.getValue();
-                if (!currentValue.equals(state.content())) {
-                    editor.setValue(state.content());
-                }
-                
-                // Set cursor position asynchronously after value is set
-                ui.getPage().executeJs(
-                    "setTimeout(() => { " +
-                    "const el = $0.inputElement; " +
-                    "el.selectionStart = $1; " +
-                    "el.selectionEnd = $1; " +
-                    "}, 10)",
-                    editor.getElement(),
-                    state.cursorPosition()
-                );
-                
-                currentCursorPosition = state.cursorPosition();
-            } finally {
-                suppressInput = false;
-                isUndoRedoOperation = false;
-            }
+            editor.setValue(state.content());
+            ui.getPage().executeJs(
+                "setTimeout(() => { const el = $0.inputElement; el.selectionStart = $1; el.selectionEnd = $1; }, 10)",
+                editor.getElement(), state.cursorPosition()
+            );
+            currentCursorPosition = state.cursorPosition();
+            suppressInput = false;
+            isUndoRedoOperation = false;
         });
     }
 
     @ClientCallable
     public void onCharacterInserted(String character, int position) {
         if (suppressInput) return;
+        
+        // Apply change locally first
+        suppressInput = true;
+        String currentText = editor.getValue();
+        String newText = currentText.substring(0, position) + character + currentText.substring(position);
+        editor.setValue(newText);
+        saveStateToUndoStack(newText, position + 1); // +1 because we inserted a character
+        suppressInput = false;
+        
+        // Then send to server
         ClientEditRequest req = CollaborativeEditService.createInsertRequest(character, position, userId, documentId);
         collaborativeEditService.sendEditRequest(req);
     }
 
-    @ClientCallable
+    @ClientCallable 
     public void onCharacterDeleted(int position) {
         if (suppressInput) return;
+        
+        // Apply locally first
+        suppressInput = true;
+        String currentText = editor.getValue();
+        if (position >= 0 && position < currentText.length()) {
+            String newText = currentText.substring(0, position) + currentText.substring(position + 1);
+            editor.setValue(newText);
+            saveStateToUndoStack(newText, position);
+        }
+        suppressInput = false;
+        
+        // Then send to server
         ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId, documentId);
         collaborativeEditService.sendEditRequest(req);
     }
 
+    // Modify the server message handler to handle conflicts
+    @Override
+    public void onServerMessage(String text) {
+        // Only apply server changes if they're different from our current state
+        if (!text.equals(editor.getValue())) {
+            suppressInput = true;
+            ui.access(() -> {
+                editor.setValue(text);
+                saveStateToUndoStack(text, currentCursorPosition);
+                suppressInput = false;
+            });
+        }
+    }
+    
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
         if (suppressInput) return;
@@ -303,21 +281,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     @ClientCallable
     public void onCharacterBatchDeleted(int startPosition, int count) {
         if (suppressInput) return;
-        for (int i = 0; i < count; i++) {
-            onCharacterDeleted(startPosition);
-        }
-    }
-
-    @Override
-    public void onServerMessage(String text) {
-        System.out.println("userId: " + userId);
-        System.out.println("📩 Message received from server in UI: " + text);
-        suppressInput = true;
-        ui.access(() -> {
-            editor.setValue(text);
-            saveStateToUndoStack(text, currentCursorPosition);
-            suppressInput = false;
-        });
+        for (int i = 0; i < count; i++) onCharacterDeleted(startPosition);
     }
 
     private void updateExportResource(String htmlContent) {
