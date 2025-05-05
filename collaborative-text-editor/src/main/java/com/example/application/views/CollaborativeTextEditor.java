@@ -86,7 +86,12 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         header.getStyle().set("text-align", "left");
 
         editor = new TextArea();
+<<<<<<< HEAD
         if (content != null) {
+=======
+        if(content != null) {
+            onCharacterBatchInserted(content,0);
+>>>>>>> b55969de5250e7b1a306e9dbffe6251ec033ead1
             editor.setValue(content);
             saveStateToUndoStack(content, 0);
         }

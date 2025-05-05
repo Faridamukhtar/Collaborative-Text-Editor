@@ -47,7 +47,8 @@ public class DocumentService {
         return Map.of(
             "documentId", doc.getId(),
             "role", role,
-            "userId", userId
+            "userId", userId, 
+            "viewCode" , doc.getViewCode()
         );
     }
 
