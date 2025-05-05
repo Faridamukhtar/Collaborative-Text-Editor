@@ -27,13 +27,21 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         System.out.println("New WebSocket connection established: " + session.getId());
+
+        // Assuming the client sends a document ID during connection initiation (perhaps as part of the first message)
+        String documentId = getDocumentIdFromSession(session);
+        if (documentId != null) {
+            session.getAttributes().put("documentId", documentId); // Store document ID in session
+        }
+
         sessions.add(session);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        System.out.println(session);
         System.out.println("WebSocket connection closed: " + session.getId());
-        // Find the document ID associated with the session (you may need to store this in session attributes)
+
         String documentId = getDocumentIdFromSession(session);
         if (documentId != null) {
             Set<WebSocketSession> docSessions = documentSessions.get(documentId);
@@ -41,6 +49,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
                 docSessions.remove(session);
                 if (docSessions.isEmpty()) {
                     documentSessions.remove(documentId);  // Clean up if no sessions are left for this document
+                    documentTrees.remove(documentId);     // Also clean up the CRDT tree
                 }
             }
         }
@@ -48,35 +57,40 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
-        ClientEditRequest clientEditRequest = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
-        String docId = clientEditRequest.getDocumentId();
+        try {
+            // Deserialize the incoming message
+            ClientEditRequest clientEditRequest = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
+            String docId = clientEditRequest.getDocumentId();
 
-        // Initialize CRDT tree if not present
-        documentTrees.putIfAbsent(docId, new CrdtTree());
+            // Initialize CRDT tree if not present
+            documentTrees.putIfAbsent(docId, new CrdtTree());
 
-        // Track session for this document
-        documentSessions.computeIfAbsent(docId, k -> ConcurrentHashMap.newKeySet()).add(session);
+            // Track session for this document
+            documentSessions.computeIfAbsent(docId, k -> ConcurrentHashMap.newKeySet()).add(session);
 
-        CrdtTree tree = documentTrees.get(docId);
-        tree.apply(clientEditRequest);
+            // Apply the client's edit to the CRDT tree
+            CrdtTree tree = documentTrees.get(docId);
+            tree.apply(clientEditRequest);
 
-        // Broadcast updated text to other sessions in the same document (EXCLUDING sender)
-        String updatedText = objectMapper.writeValueAsString(tree.getText());
-        Set<WebSocketSession> docSessions = documentSessions.get(docId);
-        
-        if (docSessions != null) {
-            for (WebSocketSession s : docSessions) {
-                if (!s.getId().equals(session.getId())) {  // Critical: Skip the sender
-                    System.out.println("Sending message to session: " + s.getId());
-                    s.sendMessage(new TextMessage(updatedText));
+            // Serialize the updated text from the CRDT tree
+            String updatedText = objectMapper.writeValueAsString(tree.getText());
+
+            // Broadcast updated text to all other sessions for this document (EXCLUDING the sender)
+            Set<WebSocketSession> docSessions = documentSessions.get(docId);
+            if (docSessions != null) {
+                for (WebSocketSession s : docSessions) {
+                    if (!s.getId().equals(session.getId())) {  // Skip the sender
+                        s.sendMessage(new TextMessage(updatedText));
+                    }
                 }
             }
+        } catch (IOException e) {
+            System.err.println("Error handling message: " + e.getMessage());
         }
     }
 
-    // Helper method to retrieve the document ID from the session (if stored during the connection)
     private String getDocumentIdFromSession(WebSocketSession session) {
-        // You can store the documentId as session attributes during connection establishment
         return (String) session.getAttributes().get("documentId");
     }
+
 }
