@@ -85,7 +85,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
         collaborativeEditService.registerListener(documentId, userId, this);
         collaborativeEditService.connectWebSocket(documentId, userId);
-        ui.addDetachListener(e -> collaborativeEditService.unregisterListener(documentId, userId));
+        ui.addDetachListener(_ -> collaborativeEditService.unregisterListener(documentId, userId));
 
         initializeEditorUi();
     }
@@ -93,7 +93,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     private void initializeEditorUi() {
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
         activeUsers.put(userId, ui);
-        ui.addDetachListener(event -> activeUsers.remove(userId));
+        ui.addDetachListener(_ -> activeUsers.remove(userId));
 
         setSizeFull();
         setPadding(true);
@@ -121,8 +121,8 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             }
         });
 
-        editor.getElement().addEventListener("keyup", e -> updateCursorPosition());
-        editor.getElement().addEventListener("click", e -> updateCursorPosition());
+        editor.getElement().addEventListener("keyup", _ -> updateCursorPosition());
+        editor.getElement().addEventListener("click", _ -> updateCursorPosition());
 
         HorizontalLayout editorToolbar = new HorizontalLayout();
         editorToolbar.setWidthFull();
@@ -133,11 +133,11 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 .set("background-color", "var(--lumo-contrast-5pct)");
 
         Button undoButton = new Button("Undo", VaadinIcon.ARROW_BACKWARD.create());
-        undoButton.addClickListener(e -> undo());
+        undoButton.addClickListener(_ -> undo());
         Button redoButton = new Button("Redo", VaadinIcon.ARROW_FORWARD.create());
-        redoButton.addClickListener(e -> redo());
+        redoButton.addClickListener(_ -> redo());
         Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
-        exportButton.addClickListener(e -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
+        exportButton.addClickListener(_ -> UI.getCurrent().getPage().executeJs("document.getElementById('hiddenDownloadLink').click();"));
 
         editorToolbar.add(undoButton, redoButton);
         editorToolbar.addAndExpand(new Div());
@@ -209,13 +209,10 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         System.out.println("onCharacterDeleted called with position: " + position);
         if (suppressInput) return;
         System.out.println("Deleting character at position: " + position);
-        // 👇 Capture the editor content BEFORE deletion happens
         String currentText = editor.getValue();
         
         if (position >= 0 && position < currentText.length()) {
             String deletedChar = currentText.substring(position, position + 1);
-
-            // Save full state BEFORE the deletion
             saveStateToUndoStack(
                 OperationType.DELETE,
                 deletedChar,
@@ -223,7 +220,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 currentText
             );
 
-            // Now send deletion request
             ClientEditRequest req = CollaborativeEditService.createDeleteRequest(
                 position, userId, documentId
             );
@@ -284,16 +280,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 collaborativeEditService.sendEditRequest(req);
             }
         }
-    }
-
-    private int max(int i, int j) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'max'");
-    }
-
-    private int min(int i, int j) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'min'");
     }
 
     private void saveStateToUndoStack(OperationType type, String text, int position, String fullContent) {
@@ -525,7 +511,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 active_users=usernames;
                 updateActiveUserListUI(usernames);
             } catch (Exception e) {
-                System.err.println("\u274C Failed to parse ACTIVE_USERS: " + e.getMessage());
+                System.err.println("Failed to parse ACTIVE_USERS: " + e.getMessage());
             }
             
             return;
@@ -576,20 +562,17 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     private void updateActiveUserCursorUI(Map<String, Integer> userCursors) {
         ui.access(() -> {
-            // Remove old cursor elements
             activeUserListSection.getChildren()
                 .filter(component -> "cursor".equals(component.getElement().getProperty("data-type")))
                 .forEach(activeUserListSection::remove);
     
-            // Add new header
             Div header = new Div("📍 Cursors:");
             header.getElement().setProperty("data-type", "cursor");
             header.getStyle().set("margin-top", "1rem")
-                             .set("margin-bottom", "0.5rem")
-                             .set("font-weight", "bold");
+                                .set("margin-bottom", "0.5rem")
+                                .set("font-weight", "bold");
             activeUserListSection.add(header);
     
-            // Add each user's cursor position
             userCursors.forEach((user, pos) -> {
                 if (active_users.contains(user)) {
                     String label = user.equals(userId) ? user + " (you)" : user;

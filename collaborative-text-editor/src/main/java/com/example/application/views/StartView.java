@@ -29,13 +29,12 @@ public class StartView extends VerticalLayout {
         setAlignItems(Alignment.CENTER);
         setJustifyContentMode(JustifyContentMode.CENTER);
 
-        // === New Document Section ===
         VerticalLayout newDocLayout = new VerticalLayout();
         newDocLayout.setAlignItems(Alignment.CENTER);
         Image newDocIcon = new Image("icons/new-file.png", "New Doc");
         newDocIcon.setWidth("60px");
         Button newDocBtn = new Button("New Doc.");
-        newDocBtn.addClickListener(event -> {
+        newDocBtn.addClickListener(_ -> {
             String result = StartPageData.createNewDocument("");
             if (result.startsWith("userId:")) {
                 VaadinSession.getCurrent().setAttribute("importedText", "");
@@ -49,7 +48,6 @@ public class StartView extends VerticalLayout {
         });
         newDocLayout.add(newDocIcon, newDocBtn);
 
-        // === Import Document Section ===
         VerticalLayout importLayout = new VerticalLayout();
         importLayout.setAlignItems(Alignment.CENTER);
         Image importIcon = new Image("icons/file-import.png", "Import");
@@ -62,7 +60,7 @@ public class StartView extends VerticalLayout {
         importLayout.setSpacing(true);
         importLayout.add(importIcon, upload);
 
-        upload.addSucceededListener(event -> {
+        upload.addSucceededListener(_ -> {
             try (InputStream inputStream = buffer.getInputStream()) {
                 String content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
 
@@ -79,7 +77,6 @@ public class StartView extends VerticalLayout {
             }
         });
 
-        // === Join Session Section ===
         VerticalLayout joinLayout = new VerticalLayout();
         joinLayout.setAlignItems(Alignment.CENTER);
         Image joinIcon = new Image("icons/join.png", "Join");
@@ -89,7 +86,7 @@ public class StartView extends VerticalLayout {
         TextField sessionCode = new TextField();
         sessionCode.setPlaceholder("Session Code");
         Button joinBtn = new Button("Join");
-        joinBtn.addClickListener(event -> {
+        joinBtn.addClickListener(_ -> {
             String code = sessionCode.getValue().trim();
             if (!code.isEmpty()) {
                 String response = StartPageData.joinDocument(code, "guestUser");
@@ -122,7 +119,6 @@ public class StartView extends VerticalLayout {
         joinRow.setAlignItems(Alignment.BASELINE);
         joinLayout.add(joinIcon, joinRow);
 
-        // Combine all three sections
         HorizontalLayout mainLayout = new HorizontalLayout(newDocLayout, importLayout, joinLayout);
         mainLayout.setAlignItems(Alignment.CENTER);
         mainLayout.setJustifyContentMode(JustifyContentMode.CENTER);

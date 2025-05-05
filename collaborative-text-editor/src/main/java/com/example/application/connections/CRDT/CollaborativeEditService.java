@@ -34,7 +34,6 @@ public class CollaborativeEditService {
         if (session != null && session.isOpen()) {
             try {
                 session.close();
-                System.out.println("❎ Closed WebSocket session for " + key);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -98,9 +97,6 @@ public class CollaborativeEditService {
         return req;
     }
 
-    /**
-     * Internal WebSocket ClientEndpoint that manages a single document-user session.
-     */
     @ClientEndpoint
     public class CollaborativeEditClientEndpoint {
 
@@ -116,7 +112,6 @@ public class CollaborativeEditService {
         public void onOpen(Session session) {
             String key = sessionKey(documentId, userId);
             sessionMap.put(key, session);
-            System.out.println("🔗 WebSocket opened for " + key);
         }
 
         @OnMessage
@@ -125,21 +120,20 @@ public class CollaborativeEditService {
             CollaborativeEditUiListener listener = listenerMap.get(key);
             if (listener != null) {
                 listener.onServerMessage(message);
-            } else {
-                System.err.println("⚠ No UI listener for key: " + key);
-            }
+            } 
         }
 
         @OnClose
         public void onClose(Session session, CloseReason reason) {
             String key = sessionKey(documentId, userId);
             sessionMap.remove(key);
-            System.out.println("❎ WebSocket closed for " + key + " - Reason: " + reason);
         }
 
         @OnError
         public void onError(Session session, Throwable throwable) {
-            System.err.println("❌ WebSocket error for " + userId + "_" + documentId + ": " + throwable.getMessage());
+            String key = sessionKey(documentId, userId);
+            System.err.println("WebSocket error for " + key + ": " + throwable.getMessage());
+            sessionMap.remove(key);
         }
     }
 }

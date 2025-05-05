@@ -23,16 +23,12 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
     @Autowired
     private DocumentService documentService;
 
-    // Track WebSocket sessions per document
     private final Map<String, Set<WebSocketSession>> documentSessions = new ConcurrentHashMap<>();
 
-    // Track userId per session
     private final Map<WebSocketSession, String> sessionToUserId = new ConcurrentHashMap<>();
 
-    // Track documentId per session
     private final Map<WebSocketSession, String> sessionToDocumentId = new ConcurrentHashMap<>();
 
-    // user id to position
     private final Map<String, Integer> trackCursors = new ConcurrentHashMap<>();
 
 
@@ -60,7 +56,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        documentSessions.computeIfAbsent(documentId, k -> ConcurrentHashMap.newKeySet()).add(session);
+        documentSessions.computeIfAbsent(documentId, _ -> ConcurrentHashMap.newKeySet()).add(session);
         sessionToUserId.put(session, userId);
         sessionToDocumentId.put(session, documentId);
 
@@ -91,7 +87,7 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
             DocumentModel doc = documentService.getDocumentById(documentId);
             if (doc != null && userId != null) {
-                doc.getUsers().remove(userId); // Optional: auto-remove user on disconnect
+                doc.getUsers().remove(userId); 
                 try {
                     sendUserList(doc, documentSessions.get(documentId));
                 } catch (IOException e) {
@@ -116,7 +112,6 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
         }
         String docId = req.getDocumentId();
-        String userId = req.getUserId();
 
         DocumentModel doc = documentService.getDocumentById(docId);
         if (doc == null) {
@@ -138,7 +133,8 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
                 try {
                     s.sendMessage(messageSent);
                 } catch (IOException e) {
-                    System.err.println("❌ Error sending raw text: " + e.getMessage());
+                    System.err.println("Failed to send message to session: " + s.getId());
+                    e.printStackTrace();
                 }
             }
         }

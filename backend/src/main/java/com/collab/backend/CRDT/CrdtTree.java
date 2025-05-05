@@ -20,14 +20,12 @@ public class CrdtTree {
             applyInsertOperation(op);
         } else if (req.type == ClientEditRequest.Type.DELETE) {
             if (req.position < 0 || req.position >= getVisibleIds().size()) {
-                System.err.println("❌ Invalid delete position: " + req.position);
                 return;
             }
             String idToDelete = getVisibleIds().get(req.position);
             applyDeleteOperation(idToDelete);
         }
 
-        System.err.println("✅ Updated text: " + getText());
     }
 
     public void applyInsertOperation(CrdtOperation op) {
@@ -43,7 +41,6 @@ public class CrdtTree {
         }
 
         if (op.parentId.equals("root")) {
-            // Insert before first if item is earlier
             if (compare(item, firstNode) < 0) {
                 item.right = firstNode;
                 firstNode.left = item;
@@ -83,7 +80,6 @@ public class CrdtTree {
         if (target != null && !target.isDeleted) {
             target.isDeleted = true;
             visibleIdsNeedRefresh = true;
-            System.err.println("🗑️ Deleted: " + targetId);
         }
     }
 
@@ -131,7 +127,6 @@ public class CrdtTree {
 
     public void delete(int position, String userId) {
         if (position < 0 || position >= getVisibleIds().size()) {
-            System.err.println("❌ Invalid delete position: " + position);
             return;
         }
 

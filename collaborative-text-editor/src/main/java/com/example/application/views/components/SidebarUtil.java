@@ -39,7 +39,7 @@ public class SidebarUtil {
         hiddenDownloadLink.getElement().setAttribute("download", true);
 
         Button exportButton = new Button("Export", VaadinIcon.DOWNLOAD.create());
-        exportButton.addClickListener(e -> {
+        exportButton.addClickListener(_ -> {
             UI.getCurrent().getPage().executeJs(
                 "document.getElementById('hiddenDownloadLink').click();"
             );

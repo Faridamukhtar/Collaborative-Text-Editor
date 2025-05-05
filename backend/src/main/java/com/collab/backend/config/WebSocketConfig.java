@@ -5,7 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.event.EventListener;
@@ -13,7 +12,6 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import org.springframework.web.socket.server.HandshakeInterceptor;
-import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 import org.springframework.web.socket.server.support.HttpSessionHandshakeInterceptor;
 
 import java.net.URI;
@@ -55,11 +53,11 @@ public class WebSocketConfig implements WebSocketConfigurer {
         return new HttpSessionHandshakeInterceptor() {
             @Override
             public boolean beforeHandshake(org.springframework.http.server.ServerHttpRequest request,
-                                           org.springframework.http.server.ServerHttpResponse response,
-                                           org.springframework.web.socket.WebSocketHandler wsHandler,
-                                           Map<String, Object> attributes) throws Exception {
+                                            org.springframework.http.server.ServerHttpResponse response,
+                                            org.springframework.web.socket.WebSocketHandler wsHandler,
+                                            Map<String, Object> attributes) throws Exception {
                 URI uri = request.getURI();
-                String query = uri.getQuery(); // get query string: ?documentId=...&userId=...
+                String query = uri.getQuery(); 
                 String documentId = null;
                 String userId = null;
     
