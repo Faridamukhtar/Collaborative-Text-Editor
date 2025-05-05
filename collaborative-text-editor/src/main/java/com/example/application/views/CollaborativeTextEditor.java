@@ -267,6 +267,16 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         });
     }
 
+    @Override
+    public void onReconnectionFailed() {
+        ui.access(() -> {
+            com.vaadin.flow.component.notification.Notification.show(
+                "Reconnection failed. Please refresh the page to rejoin the session.", 5000,
+                com.vaadin.flow.component.notification.Notification.Position.MIDDLE
+            );
+        });
+    }
+
     private void updateActiveUserListUI(List<String> usernames) {
         ui.access(() -> {
             activeUserListSection.removeAll();

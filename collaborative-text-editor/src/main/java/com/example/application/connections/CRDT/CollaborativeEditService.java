@@ -1,11 +1,14 @@
 package com.example.application.connections.CRDT;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.websocket.*;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,6 +20,7 @@ public class CollaborativeEditService {
 
     private final Map<String, Session> sessionMap = new ConcurrentHashMap<>();
     private final Map<String, CollaborativeEditUiListener> listenerMap = new ConcurrentHashMap<>();
+    private final Map<String, List<ClientEditRequest>> editBuffer = new ConcurrentHashMap<>();
 
     // Generate a unique key for each user-document session
     private String sessionKey(String documentId, String userId) {
@@ -66,6 +70,7 @@ public class CollaborativeEditService {
             }
         } else {
             System.err.println("❗ Cannot send. WebSocket session is closed or null for " + key);
+            editBuffer.computeIfAbsent(key, k -> new ArrayList<>()).add(req);
         }
     }
 
@@ -90,6 +95,29 @@ public class CollaborativeEditService {
         return req;
     }
 
+    private void startReconnectionLoop(String documentId, String userId) {
+        new Thread(() -> {
+            String key = sessionKey(documentId, userId);
+            long start = System.currentTimeMillis();
+            long timeout = 5 * 60 * 1000;
+    
+            while (!sessionMap.containsKey(key) && System.currentTimeMillis() - start < timeout) {
+                try {
+                    Thread.sleep(3000); // Wait 3s between attempts
+                    System.out.println("🔁 Attempting to reconnect for " + key);
+                    connectWebSocket(documentId, userId); // this triggers a new connection
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+    
+            if (!sessionMap.containsKey(key)) {
+                System.out.println("❌ Reconnection failed for user " + userId);
+            }
+        }).start();
+    }
+    
+
     /**
      * Internal WebSocket ClientEndpoint that manages a single document-user session.
      */
@@ -109,16 +137,55 @@ public class CollaborativeEditService {
             String key = sessionKey(documentId, userId);
             sessionMap.put(key, session);
             System.out.println("🔗 WebSocket opened for " + key);
+
+            // Send reconnect request
+            Map<String, Object> req = Map.of(
+                "type", "reconnectRequest",
+                "userId", userId
+            );
+
+            try {
+                String json = mapper.writeValueAsString(req);
+                session.getAsyncRemote().sendText(json);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
         @OnMessage
         public void onMessage(String message) {
             String key = sessionKey(documentId, userId);
             CollaborativeEditUiListener listener = listenerMap.get(key);
-            if (listener != null) {
-                listener.onServerMessage(message);
-            } else {
+
+            if (listener == null) {
                 System.err.println("⚠ No UI listener for key: " + key);
+                return;
+            }
+
+            try {
+                JsonNode root = mapper.readTree(message);
+                String type = root.has("type") ? root.get("type").asText() : null;
+
+                if ("missedOperations".equals(type)) {
+                    System.out.println("🧾 Received missed operations for " + key);
+                    JsonNode ops = root.get("operations");
+
+                    for (JsonNode opNode : ops) {
+                        String singleOp = mapper.writeValueAsString(opNode);
+                        listener.onServerMessage(singleOp);
+                    }
+
+                    // Send any buffered local ops after missed ones are applied
+                    List<ClientEditRequest> buffered = editBuffer.getOrDefault(key, List.of());
+                    for (ClientEditRequest op : buffered) {
+                        sendEditRequest(op);
+                    }
+                    editBuffer.remove(key);
+                } else {
+                    listener.onServerMessage(message);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
 
@@ -127,6 +194,7 @@ public class CollaborativeEditService {
             String key = sessionKey(documentId, userId);
             sessionMap.remove(key);
             System.out.println("❎ WebSocket closed for " + key + " - Reason: " + reason);
+            startReconnectionLoop(documentId, userId);
         }
 
         @OnError
