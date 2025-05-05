@@ -264,9 +264,9 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
         String currentText = editor.getValue();
         System.out.println("Current text: " + currentText.length() + ", startPosition: " + startPosition + ", count: " + count);
-        if (startPosition >= 0 && startPosition + count <= currentText.length()) {
+        if (startPosition >= 0) {
             System.out.println("Deleting characters from position: " + startPosition + " to " + (startPosition + count));
-            String deletedText = currentText.substring(startPosition, startPosition + count);
+            String deletedText = currentText.substring(startPosition-count+1, startPosition+1);
 
             if(!isUndoRedoOperation) {
                 saveStateToUndoStack(
@@ -284,6 +284,16 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 collaborativeEditService.sendEditRequest(req);
             }
         }
+    }
+
+    private int max(int i, int j) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'max'");
+    }
+
+    private int min(int i, int j) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'min'");
     }
 
     private void saveStateToUndoStack(OperationType type, String text, int position, String fullContent) {
@@ -366,14 +376,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                         );
                         currentCursorPosition = pos;
                     }
-                    lastState = new EditorState(
-                        OperationType.BATCH_DELETE,
-                        inserted,
-                        pos,
-                        userId,
-                        current,
-                        currentCursorPosition
-                    );
                 }
                 case BATCH_DELETE -> {
                     int pos = lastState.position();
@@ -405,6 +407,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             );
             
             redoStack.push(lastState);
+            isUndoRedoOperation = false;
         } finally {
             isUndoRedoOperation = false;
         }
@@ -528,13 +531,11 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             return;
         }
         else if (text.trim().startsWith("{") && text.contains("\"type\":\"CURSOR_UPDATE\"")) {
-            System.out.println("yaraaaaaaaab");
             System.out.println(text);
             try {
                 JsonObject json = JsonParser.parseString(text).getAsJsonObject();
                 JsonObject cursors = json.getAsJsonObject("cursors");
                 Map<String, Integer> cursorMap = new HashMap<>();
-                System.out.printf("cursors" , cursorMap);
         
                 for (String key : cursors.keySet()) {
                     int pos = cursors.get(key).getAsInt();
@@ -543,7 +544,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         
                 updateActiveUserCursorUI(cursorMap);
             } catch (Exception e) {
-                System.err.println("❌ Failed to parse CURSOR_UPDATE: " + e.getMessage());
+                System.err.println("Failed to parse CURSOR_UPDATE: " + e.getMessage());
             }
             return;
         }

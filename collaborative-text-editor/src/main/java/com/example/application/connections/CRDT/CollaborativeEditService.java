@@ -47,9 +47,9 @@ public class CollaborativeEditService {
             String wsUrl = String.format("ws://localhost:8081/crdt/%s?documentId=%s&userId=%s", documentId, documentId, userId);
             WebSocketContainer container = ContainerProvider.getWebSocketContainer();
             container.connectToServer(new CollaborativeEditClientEndpoint(documentId, userId), new URI(wsUrl));
-            System.out.println("✅ WebSocket connection initialized for " + key);
+            System.out.println("WebSocket connection initialized for " + key);
         } catch (Exception e) {
-            throw new RuntimeException("❌ WebSocket connection failed", e);
+            throw new RuntimeException("WebSocket connection failed", e);
         }
     }
 
@@ -60,12 +60,11 @@ public class CollaborativeEditService {
             try {
                 String json = mapper.writeValueAsString(req);
                 session.getAsyncRemote().sendText(json);
-                System.out.println("📤 Sent edit request: " + json);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to send WebSocket message", e);
             }
         } else {
-            System.err.println("❗ Cannot send. WebSocket session is closed or null for " + key);
+            System.err.println("Cannot send. WebSocket session is closed or null for " + key);
         }
     }
 
