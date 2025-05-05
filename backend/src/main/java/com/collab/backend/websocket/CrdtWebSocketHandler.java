@@ -70,10 +70,8 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         System.out.println("WebSocket closed: " + session.getId());
-    
         String documentId = sessionToDocumentId.remove(session);
         String userId = sessionToUserId.remove(session);
-    
         if (documentId != null) {
             Set<WebSocketSession> sessions = documentSessions.get(documentId);
             if (sessions != null) {
@@ -82,7 +80,6 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
                     documentSessions.remove(documentId);
                 }
             }
-    
             DocumentModel doc = documentService.getDocumentById(documentId);
             if (doc != null && userId != null) {
                 doc.getUsers().remove(userId); // Optional: auto-remove user on disconnect
@@ -196,6 +193,5 @@ protected void handleTextMessage(WebSocketSession session, TextMessage message) 
             }
         }
         return null;
-    }
-    
+    }  
 }
