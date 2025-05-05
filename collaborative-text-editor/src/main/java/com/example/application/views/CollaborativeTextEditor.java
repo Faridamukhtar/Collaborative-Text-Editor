@@ -67,13 +67,19 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         documentId = helpers.extractData(parameter, "documentId");
         viewCode = helpers.extractData(parameter, "viewCode");
         editCode = helpers.extractData(parameter, "editCode");
-        
+        System.err.println("Document ID: " + documentId);
+        System.err.println("User ID: " + userId);
+        System.err.println("Role: " + role);
+        System.err.println("View Code: " + viewCode);
         this.ui = UI.getCurrent();
         initializeEditorUi();
     }
 
     private void initializeEditorUi() {
-        collaborativeEditService.connectWebSocket(documentId);
+        System.out.println("Initializing editor UI...");
+        System.out.println("userId: " + userId);
+        System.out.println("documentId: " + documentId);
+        collaborativeEditService.connectWebSocket(documentId, userId);
         String content = (String) VaadinSession.getCurrent().getAttribute("importedText");
 
         // Register this user
@@ -289,15 +295,20 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
+        System.out.println("onCharacterDeleted: " + position);
         if (suppressInput) return;
+        System.out.println("onCharacterDeleted AFTER SUPRESSS: " + position);
         ClientEditRequest req = CollaborativeEditService.createDeleteRequest(position, userId, documentId);
         collaborativeEditService.sendEditRequest(req);
     }
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
+        System.out.println("onCharacterBatchInserted: " + text);
         if (suppressInput) return;
+        System.out.println("onCharacterBatchInserted AFTER SUPRESSS: " + text);
         for (int i = 0; i < text.length(); i++) {
+            // Send each character to the server
             String ch = String.valueOf(text.charAt(i));
             onCharacterInserted(ch, position + i);
         }

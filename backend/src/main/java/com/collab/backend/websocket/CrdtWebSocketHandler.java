@@ -1,55 +1,94 @@
 package com.collab.backend.websocket;
 
 import com.collab.backend.crdt.*;
+import com.collab.backend.models.DocumentModel;
+import com.collab.backend.models.UserModel;
+import com.collab.backend.service.DocumentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.*;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
-import org.springframework.web.socket.CloseStatus;
 
 import java.io.IOException;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
 
-    // Map: documentId -> CRDT tree
-    private final Map<String, CrdtTree> documentTrees = new ConcurrentHashMap<>();
-    // Map: documentId -> sessions for that document
+    @Autowired
+    private DocumentService documentService;
+
+    // Track WebSocket sessions per document
     private final Map<String, Set<WebSocketSession>> documentSessions = new ConcurrentHashMap<>();
+
+    // Track userId per session
+    private final Map<WebSocketSession, String> sessionToUserId = new ConcurrentHashMap<>();
+
+    // Track documentId per session
+    private final Map<WebSocketSession, String> sessionToDocumentId = new ConcurrentHashMap<>();
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        System.out.println("New WebSocket connection established: " + session.getId());
+        System.out.println("WebSocket connection established: " + session.getId());
 
-        // Assuming the client sends a document ID during connection initiation (perhaps as part of the first message)
-        String documentId = getDocumentIdFromSession(session);
-        if (documentId != null) {
-            session.getAttributes().put("documentId", documentId); // Store document ID in session
+        String query = session.getUri() != null ? session.getUri().getQuery() : null;
+        String documentId = extractQueryParam(query, "documentId");
+        String userId = extractQueryParam(query, "userId");
+
+        if (documentId == null || userId == null) {
+            System.err.println("Missing documentId or userId in query.");
+            return;
         }
 
-        sessions.add(session);
+        DocumentModel doc = documentService.getDocumentById(documentId);
+        if (doc == null) {
+            System.err.println("Invalid documentId: " + documentId);
+            return;
+        }
+
+        if (!doc.getUsers().containsKey(userId)) {
+            System.err.println("UserId not part of document: " + userId);
+            return;
+        }
+
+        documentSessions.computeIfAbsent(documentId, k -> ConcurrentHashMap.newKeySet()).add(session);
+        sessionToUserId.put(session, userId);
+        sessionToDocumentId.put(session, documentId);
+
+        try {
+            sendUserList(doc, documentSessions.get(documentId));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        System.out.println(session);
-        System.out.println("WebSocket connection closed: " + session.getId());
+        System.out.println("WebSocket closed: " + session.getId());
 
-        String documentId = getDocumentIdFromSession(session);
+        String documentId = sessionToDocumentId.remove(session);
+        String userId = sessionToUserId.remove(session);
+
         if (documentId != null) {
-            Set<WebSocketSession> docSessions = documentSessions.get(documentId);
-            if (docSessions != null) {
-                docSessions.remove(session);
-                if (docSessions.isEmpty()) {
-                    documentSessions.remove(documentId);  // Clean up if no sessions are left for this document
-                    documentTrees.remove(documentId);     // Also clean up the CRDT tree
+            Set<WebSocketSession> sessions = documentSessions.get(documentId);
+            if (sessions != null) {
+                sessions.remove(session);
+                if (sessions.isEmpty()) {
+                    documentSessions.remove(documentId);
+                }
+            }
+
+            DocumentModel doc = documentService.getDocumentById(documentId);
+            if (doc != null && userId != null) {
+                doc.getUsers().remove(userId); // Optional: auto-remove user on disconnect
+                try {
+                    sendUserList(doc, documentSessions.get(documentId));
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
             }
         }
@@ -57,40 +96,59 @@ public class CrdtWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws IOException {
-        try {
-            // Deserialize the incoming message
-            ClientEditRequest clientEditRequest = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
-            String docId = clientEditRequest.getDocumentId();
+        ClientEditRequest req = objectMapper.readValue(message.getPayload(), ClientEditRequest.class);
+        String docId = req.getDocumentId();
+        String userId = req.getUserId();
 
-            // Initialize CRDT tree if not present
-            documentTrees.putIfAbsent(docId, new CrdtTree());
+        DocumentModel doc = documentService.getDocumentById(docId);
+        if (doc == null) {
+            System.err.println("Received edit for non-existent document: " + docId);
+            return;
+        }
 
-            // Track session for this document
-            documentSessions.computeIfAbsent(docId, k -> ConcurrentHashMap.newKeySet()).add(session);
+        CrdtTree tree = doc.getCrdtTree();
+        tree.apply(req);
 
-            // Apply the client's edit to the CRDT tree
-            CrdtTree tree = documentTrees.get(docId);
-            tree.apply(clientEditRequest);
+        String updatedText = objectMapper.writeValueAsString(tree.getText());
+        Set<WebSocketSession> sessions = documentSessions.get(docId);
 
-            // Serialize the updated text from the CRDT tree
-            String updatedText = objectMapper.writeValueAsString(tree.getText());
-
-            // Broadcast updated text to all other sessions for this document (EXCLUDING the sender)
-            Set<WebSocketSession> docSessions = documentSessions.get(docId);
-            if (docSessions != null) {
-                for (WebSocketSession s : docSessions) {
-                    if (!s.getId().equals(session.getId())) {  // Skip the sender
-                        s.sendMessage(new TextMessage(updatedText));
-                    }
+        if (sessions != null) {
+            for (WebSocketSession s : sessions) {
+                if (s.isOpen()) {
+                    s.sendMessage(new TextMessage(updatedText));
                 }
             }
-        } catch (IOException e) {
-            System.err.println("Error handling message: " + e.getMessage());
         }
     }
 
-    private String getDocumentIdFromSession(WebSocketSession session) {
-        return (String) session.getAttributes().get("documentId");
+    private void sendUserList(DocumentModel doc, Set<WebSocketSession> sessions) throws IOException {
+        if (sessions == null) return;
+
+        List<String> usernames = doc.getUsers().values().stream()
+                .map(UserModel::getUsername)
+                .toList();
+
+        Map<String, Object> msg = new HashMap<>();
+        msg.put("type", "ACTIVE_USERS");
+        msg.put("usernames", usernames);
+
+        String json = objectMapper.writeValueAsString(msg);
+
+        for (WebSocketSession session : sessions) {
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage(json));
+            }
+        }
     }
 
+    private String extractQueryParam(String query, String key) {
+        if (query == null || !query.contains("=")) return null;
+        for (String param : query.split("&")) {
+            String[] parts = param.split("=");
+            if (parts.length == 2 && parts[0].equals(key)) {
+                return parts[1];
+            }
+        }
+        return null;
+    }
 }

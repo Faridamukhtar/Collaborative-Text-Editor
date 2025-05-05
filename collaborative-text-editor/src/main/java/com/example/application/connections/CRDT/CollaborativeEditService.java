@@ -19,9 +19,10 @@ public class CollaborativeEditService {
         uiListener.set(listener);
     }
 
-    public void connectWebSocket(String documentId) {
+    public void connectWebSocket(String documentId, String userId) {
         try {
-            String wsUrl = String.format("ws://localhost:8081/crdt/%s", documentId);
+            System.out.println("Connecting to WebSocket..." +documentId);
+            String wsUrl = String.format("ws://localhost:8081/crdt/%s?documentId=%s&userId=%s", documentId, documentId, userId);
             WebSocketContainer container = ContainerProvider.getWebSocketContainer();
             container.connectToServer(this, new URI(wsUrl));
             System.out.println("✅ WebSocket connection initialized to: " + wsUrl);
