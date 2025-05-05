@@ -204,8 +204,9 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterDeleted(int position) {
+        System.out.println("onCharacterDeleted called with position: " + position);
         if (suppressInput) return;
-
+        System.out.println("Deleting character at position: " + position);
         // 👇 Capture the editor content BEFORE deletion happens
         String currentText = editor.getValue();
         
@@ -231,19 +232,22 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterBatchInserted(String text, int position) {
+        System.out.println("onCharacterBatchInserted called with text: " + text + ", position: " + position);
         if (suppressInput || text.isEmpty()) return;
         
-        saveStateToUndoStack(
-            OperationType.BATCH_INSERT,
-            text,
-            position,
-            editor.getValue()
-        );
+        if(!isUndoRedoOperation) {
+            saveStateToUndoStack(
+                OperationType.BATCH_INSERT,
+                text,
+                position,
+                editor.getValue()
+            );
+        }
         
         for (int i = 0; i < text.length(); i++) {
             ClientEditRequest req = CollaborativeEditService.createInsertRequest(
                 String.valueOf(text.charAt(i)), 
-                position + i, 
+                position, 
                 userId, 
                 documentId
             );
@@ -253,23 +257,28 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
 
     @ClientCallable
     public void onCharacterBatchDeleted(int startPosition, int count) {
+        System.out.println("onCharacterBatchDeleted called with startPosition: " + startPosition + ", count: " + count);
         if (suppressInput || count <= 0) return;
 
         String currentText = editor.getValue();
+        System.out.println("Current text: " + currentText.length() + ", startPosition: " + startPosition + ", count: " + count);
         if (startPosition >= 0 && startPosition + count <= currentText.length()) {
+            System.out.println("Deleting characters from position: " + startPosition + " to " + (startPosition + count));
             String deletedText = currentText.substring(startPosition, startPosition + count);
 
-            saveStateToUndoStack(
-                OperationType.BATCH_DELETE,
-                deletedText,
-                startPosition,
-                currentText
-            );
-
+            if(!isUndoRedoOperation) {
+                saveStateToUndoStack(
+                    OperationType.BATCH_DELETE,
+                    deletedText,
+                    startPosition,
+                    currentText
+                );
+            }
             for (int i = 0; i < count; i++) {
                 ClientEditRequest req = CollaborativeEditService.createDeleteRequest(
                     startPosition, userId, documentId
                 );
+                System.out.println("Sending delete request for position: " + req);
                 collaborativeEditService.sendEditRequest(req);
             }
         }
@@ -289,22 +298,24 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
     }
 
     private void undo() {
+        System.out.println("Undoing last operation...");
         if (undoStack.isEmpty()) return;
         
         EditorState lastState = undoStack.pop();
-        
+        System.out.println("Last state: " + lastState);
         if (!userId.equals(lastState.userId())) {
             undo();
             return;
         }
-        
-        suppressInput = true;
         isUndoRedoOperation = true;
+        System.out.println("Undoing operation of type: " + lastState.type());
         try {
             String current = editor.getValue();
             switch (lastState.type()) {
                 case INSERT -> {
+                    System.out.println("Undoing INSERT operation");
                     int pos = lastState.position();
+                    onCharacterDeleted(pos);
                     if (pos >= 0 && pos < current.length() && 
                         current.startsWith(lastState.text(), pos)) {
                         editor.setValue(
@@ -316,6 +327,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 }
                 case DELETE -> {
                     int pos = lastState.position();
+                    onCharacterInserted(lastState.text(), pos);
                     editor.setValue(
                         current.substring(0, pos) +
                         lastState.text() +
@@ -326,6 +338,8 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 case BATCH_INSERT -> {
                     int pos = lastState.position();
                     String inserted = lastState.text();
+                    System.out.println("Undoing INSERT operation");
+                    onCharacterBatchDeleted(pos, inserted.length());
                     if (pos >= 0 && pos + inserted.length() <= current.length() && 
                         current.startsWith(inserted, pos)) {
                         editor.setValue(
@@ -337,6 +351,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 }
                 case BATCH_DELETE -> {
                     int pos = lastState.position();
+                    onCharacterBatchInserted(lastState.text(), pos);
                     editor.setValue(
                         current.substring(0, pos) +
                         lastState.text() +
@@ -353,7 +368,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             
             redoStack.push(lastState);
         } finally {
-            suppressInput = false;
             isUndoRedoOperation = false;
         }
     }
@@ -362,14 +376,13 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
         if (redoStack.isEmpty()) return;
         
         EditorState nextState = redoStack.pop();
-        
-        suppressInput = true;
         isUndoRedoOperation = true;
         try {
             String current = editor.getValue();
             switch (nextState.type()) {
                 case INSERT -> {
                     int pos = nextState.position();
+                    onCharacterInserted(nextState.text(), pos);
                     editor.setValue(
                         current.substring(0, pos) +
                         nextState.text() +
@@ -379,6 +392,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 }
                 case DELETE -> {
                     int pos = nextState.position();
+                    onCharacterDeleted(pos);
                     if (pos >= 0 && pos < current.length() && 
                         current.startsWith(nextState.text(), pos)) {
                         editor.setValue(
@@ -390,6 +404,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 }
                 case BATCH_INSERT -> {
                     int pos = nextState.position();
+                    onCharacterBatchDeleted(pos, nextState.text().length());
                     editor.setValue(
                         current.substring(0, pos) +
                         nextState.text() +
@@ -400,6 +415,7 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
                 case BATCH_DELETE -> {
                     int pos = nextState.position();
                     String toDelete = nextState.text();
+                    onCharacterBatchInserted(toDelete, pos);
                     if (pos >= 0 && pos + toDelete.length() <= current.length() && 
                         current.startsWith(toDelete, pos)) {
                         editor.setValue(
@@ -418,7 +434,6 @@ public class CollaborativeTextEditor extends VerticalLayout implements Collabora
             
             undoStack.push(nextState);
         } finally {
-            suppressInput = false;
             isUndoRedoOperation = false;
         }
     }
