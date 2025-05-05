@@ -39,30 +39,26 @@ public class CrdtOperation {
     }
 
     public static CrdtOperation fromClientInsert(ClientEditRequest req, List<String> visibleIds) {
-        String targetId = req.userId + "-" + req.timestamp;
-        
-        // Fix parent ID selection for mid-sentence insertions
+        int pos = req.position;
         String parentId;
-        if (req.position <= 0) {
+
+        if (pos <= 0 || visibleIds.isEmpty()) {
             parentId = "root";
-        } else if (req.position >= visibleIds.size()) {
-            // If inserting after the last character, use the last character as parent
+        } else if (pos > visibleIds.size()) {
             parentId = visibleIds.get(visibleIds.size() - 1);
         } else {
-            // For mid-sentence insertions, use the character before the insertion point as parent
-            parentId = visibleIds.get(req.position - 1);
+            parentId = visibleIds.get(pos - 1);
         }
-        
-        System.err.println("Parent ID: " + parentId);
+
+        String id = req.userId + "-" + req.timestamp;
 
         return insert(
-            req.documentId,
-            targetId,
-            req.value,
-            parentId,
-            req.timestamp,
-            req.userId
-        );
+                req.documentId,
+                id,
+                req.value,
+                parentId,
+                req.timestamp,
+                req.userId);
     }
 
     public static CrdtOperation fromClientDelete(ClientEditRequest req, List<String> visibleIds) {   
