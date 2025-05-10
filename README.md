@@ -1,97 +1,77 @@
+
 # Collaborative Plain Text Editor
 
 ## Overview
 
-This project is a **simplified real-time collaborative plain text editor** designed and implemented using **Spring Boot** for the backend and **Vaadin** for the frontend. The editor allows multiple users to simultaneously edit the same document, track each user's cursor position, and manage collaborative sessions through shareable codes. The application supports both editing and viewing modes, where editors can modify the document, and viewers can only read.
+This project is a **real-time collaborative plain text editor** developed using **Spring Boot (backend)** and **Vaadin (frontend)**. It enables multiple users to collaboratively edit the same document, with real-time synchronization, cursor tracking, permission control, and CRDT-based consistency. The application supports editor/viewer roles, session-based access via sharable codes, and common file operations like import/export.
 
-## Features
+## ✨ Features
 
-* **Real-time Collaborative Editing**: Multiple users can edit the same document in real-time, with character-by-character insertion and deletion support.
-* **Cursor Tracking**: Each user's cursor position is tracked and displayed, allowing others to see where they are typing.
-* **Undo/Redo**: Users can undo/redo their last actions, but changes made by other users cannot be undone.
-* **File Import/Export**: Import and export text files while preserving line breaks.
-* **Sharable Codes**: Documents have two codes—one for editors (full access) and one for viewers (read-only access)—which can be shared to start collaborative sessions.
-* **Conflict-Free Replicated Data Type (CRDT)**: Utilizes a CRDT algorithm to handle concurrent edits and conflicts.
-* **Permission Management**: Viewers cannot edit the text or access sharable codes.
-* **Active User List**: Displays a list of users currently in the document and their cursor positions.
+- **Real-time Collaborative Editing**: Users can simultaneously insert and delete characters in a shared document.
+- **Cursor Tracking**: Visual indicators display each user's cursor position to all participants.
+- **Undo/Redo Support**: Editors can undo or redo their own recent changes without affecting other users' edits.
+- **Import/Export Support**: Upload `.txt` files with preserved formatting and export the current document as a downloadable text file.
+- **Sharable Access Codes**: Separate codes for editor (write) and viewer (read-only) access to securely manage collaboration.
+- **Permission Management**: Viewers are restricted from editing or accessing sensitive controls (e.g., shareable codes).
+- **CRDT Synchronization**: Utilizes a Conflict-Free Replicated Data Type to handle concurrent editing without conflicts.
+- **Active User Display**: A real-time list of connected users and their cursor positions is shown in the editor.
 
+## 🛠️ Technology Stack
 
-### Installation
+- **Backend**: Java, Spring Boot, WebSocket
+- **Frontend**: Vaadin (Java), Custom JavaScript for editor enhancements
+- **Concurrency**: Tree-based CRDT implementation for consistent multi-user editing
+- **Build Tools**: Maven
 
-#### Backend Installation (Spring Boot)
+## 🚀 Installation
+
+### Backend Setup (Spring Boot)
 
 1. Clone the repository:
-
    ```bash
    git clone https://github.com/Faridamukhtar/Collaborative-Text-Editor.git
    ```
-
-2. Navigate to the backend project directory:
-
+2. Navigate to backend:
    ```bash
-   cd ./backend
+   cd backend
    ```
-
-3. Install dependencies and build the project:
-
+3. Build and run:
    ```bash
    mvn clean install
-   ```
-
-4. Run the backend application:
-
-   ```bash
    mvn spring-boot:run
    ```
+4. Server will be available at `http://localhost:8081`
 
-5. The backend server will be running at `http://localhost:8081`.
+### Frontend Setup (Vaadin)
 
-#### Frontend Installation (Vaadin)
-
-1. Navigate to the frontend project directory:
-
+1. Navigate to frontend:
    ```bash
-   cd ./collaborative-text-editor
+   cd collaborative-text-editor
    ```
-
-2. Install the frontend dependencies:
-
+2. Build and run:
    ```bash
-    mvn clean install
+   mvn clean install
+   mvn spring-boot:run
    ```
+3. App will be accessible at `http://localhost:8080`
 
-3. Run the frontend development server:
+## 💡 Usage
 
-   ```bash
-      mvn spring-boot:run
-   ```
+- **Start a Session**: Launch the app, receive a document ID and editor/viewer codes.
+- **Share Access**: Distribute the proper code depending on whether the collaborator should be an editor or viewer.
+- **Edit Together**: Real-time updates will sync across all clients.
+- **Track Cursors**: Colored markers show active cursor positions for all users.
+- **Manage Text**: Use import/export functions for `.txt` files and undo/redo for local changes.
 
-4. The frontend application will be running at `http://localhost:8080`.
+## 📂 Project Structure
 
-### Usage
+- `backend/` - Spring Boot project with CRDT, WebSocket endpoints, and session logic.
+- `frontend/` - Vaadin app with UI elements, editor logic, and collaboration features.
+- `shared/` - (if applicable) common types and logic reused across frontend/backend.
+- `crdt/` - Custom-built tree-based CRDT module for handling collaborative edits.
 
-1. **Starting a Collaboration Session**:
+## 📌 Author
 
-   * After opening the editor, you can share the session with others by sending the editor or viewer code.
-   * Editors can modify the document, while viewers will only have read-only access.
-
-2. **Collaborating in Real-Time**:
-
-   * As multiple users type simultaneously, the changes are reflected in real-time for all users connected to the session.
-   * The cursor positions of active users are tracked and displayed in the editor.
-
-3. **File Operations**:
-
-   * You can import a text file into the editor, and it will preserve the line breaks.
-   * The document can also be exported as a `.txt` file.
-
-4. **Undo/Redo**:
-
-   * Editors can undo or redo their latest actions. However, actions made by other users cannot be undone.
-
-## Technical Details
-
-* **Backend**: Java **Spring Boot**, WebSocket-based communication for real-time collaboration.
-* **Frontend**: **Vaadin** framework for UI components, custom JavaScript for handling editor features.
-* **Concurrency Handling**: Uses a **CRDT** (Conflict-Free Replicated Data Type) algorithm to ensure consistency across edits.
+Developed by [Farida Mukhtar](https://github.com/Faridamukhtar)  
+For educational and experimental use in distributed systems and collaborative editing.
 
