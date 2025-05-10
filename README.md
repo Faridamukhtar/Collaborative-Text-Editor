@@ -70,8 +70,3 @@ This project is a **real-time collaborative plain text editor** developed using 
 - `shared/` - (if applicable) common types and logic reused across frontend/backend.
 - `crdt/` - Custom-built tree-based CRDT module for handling collaborative edits.
 
-## 📌 Author
-
-Developed by [Farida Mukhtar](https://github.com/Faridamukhtar)  
-For educational and experimental use in distributed systems and collaborative editing.
-
